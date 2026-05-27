@@ -236,7 +236,7 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab - single file research tool. Not financial advice. */
+/* FTA v6 Edge Lab v5 - non-blocking cloud sync. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
@@ -253,7 +253,9 @@ let state = {
   autoTimer: null,
   supabaseClient: null,
   supabaseSession: null,
-  cloudBusy: false
+  cloudBusy: false,
+  pendingCloudSync: false,
+  lastCloudError: null
 };
 let memoryCache = new Map();
 
@@ -684,7 +686,7 @@ async function scan(){
     render();
     setStatus(`Scan xong: ${state.raw.length} raw signals. Auto add ${added} vào Shadow/Forward/Trade. Duplicate mềm: ${dup}.`);
     setProgress(100);
-    await syncToSupabaseIfReady();
+    scheduleCloudSync('scan');
   }catch(e){ setStatus('Scan lỗi: '+e.message); setProgress(0); }
 }
 
@@ -702,7 +704,7 @@ async function trackAll(){
   saveJSON(STORE,state.signals);
   render();
   setStatus(`Track xong ${list.length} signal. Learning stats đã cập nhật theo outcome mới.`);
-  await syncToSupabaseIfReady();
+  scheduleCloudSync('track');
 }
 function invalidTimeOrderReason(s){
   const e = +s.entryHitTime || 0;
@@ -971,26 +973,54 @@ async function signInSupabase(){
   state.cloudBusy=false;
   await pullSupabase();
 }
+function scheduleCloudSync(reason='auto'){
+  // Không để Scan/Track bị treo vì Push Cloud. Cloud sync chạy nền best-effort.
+  if (!state.supabaseClient) return;
+  if (state.cloudBusy) { state.pendingCloudSync = true; return; }
+  setTimeout(()=>{ pushSupabase(false).catch(e=>console.warn('Background push lỗi:', e)); }, 0);
+}
 async function syncToSupabaseIfReady(){
-  if (!state.supabaseClient || state.cloudBusy) return;
-  const session = await ensureSupaSession();
-  if(!session) return;
-  await pushSupabase(false);
+  scheduleCloudSync('auto');
 }
 async function pushSupabase(show=true){
-  if(state.cloudBusy) { if(show) setStatus('Cloud đang xử lý, chờ xong rồi bấm lại.'); return; }
+  if(state.cloudBusy) {
+    state.pendingCloudSync = true;
+    if(show) setStatus('Cloud đang xử lý, đã xếp lịch push lại sau khi xong.');
+    return;
+  }
   const c=state.supabaseClient || initSupabase();
-  const session = await ensureSupaSession();
-  if(!c || !session) { if(show) setStatus('Chưa login Supabase. Hãy bấm Login + Pull trước.'); return; }
+  if(!c) { if(show) setStatus('Thiếu Supabase URL/key hoặc chưa tải được thư viện Supabase.'); return; }
   state.cloudBusy=true;
+  state.lastCloudError=null;
   try{
+    const session = await ensureSupaSession();
+    if(!session) { if(show) setStatus('Chưa login Supabase. Hãy bấm Login + Pull trước.'); return; }
     const rows=state.signals.slice(0,1000).map(mapSignalToRow);
-    setStatus(`Đang Push Cloud ${rows.length} signals...`);
-    const {error}=await withTimeout(c.from('signals').upsert(rows,{onConflict:'id'}), 30000, 'Push Supabase');
-    if(error) throw error;
-    if(show) setStatus(`Push cloud xong: ${rows.length} signals.`);
-  }catch(e){ if(show) setStatus('Push cloud lỗi: '+(e.message||e)); console.warn(e); }
-  finally{state.cloudBusy=false;}
+    if(!rows.length){ if(show) setStatus('Không có signal để Push Cloud.'); return; }
+    const batchSize = 100;
+    const total = rows.length;
+    if(show) setStatus(`Đang Push Cloud ${total} signals theo batch ${batchSize}...`);
+    else setStatus(`Scan/Track xong. Đang sync cloud nền ${total} signals...`);
+    for(let i=0;i<total;i+=batchSize){
+      const part = rows.slice(i, i+batchSize);
+      const label = `Push Supabase batch ${Math.floor(i/batchSize)+1}/${Math.ceil(total/batchSize)}`;
+      const {error}=await withTimeout(c.from('signals').upsert(part,{onConflict:'id'}), 20000, label);
+      if(error) throw error;
+      if(show) setStatus(`Push Cloud ${Math.min(i+part.length,total)}/${total} signals...`);
+    }
+    setStatus(show ? `Push cloud xong: ${total} signals.` : `Sync cloud nền xong: ${total} signals.`);
+  }catch(e){
+    state.lastCloudError = e.message || String(e);
+    setStatus((show?'Push cloud lỗi: ':'Sync cloud nền lỗi: ')+state.lastCloudError);
+    console.warn(e);
+  }
+  finally{
+    state.cloudBusy=false;
+    if(state.pendingCloudSync){
+      state.pendingCloudSync=false;
+      setTimeout(()=>{ pushSupabase(false).catch(e=>console.warn('Queued push lỗi:', e)); }, 1500);
+    }
+  }
 }
 async function pullSupabase(){
   if(state.cloudBusy) return setStatus('Cloud đang xử lý, chờ xong rồi bấm lại.');
