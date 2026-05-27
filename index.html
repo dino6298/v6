@@ -923,20 +923,53 @@ function saveSupaSettings(){
 function initSupabase(){
   const cfg=saveSupaSettings();
   if (!cfg.url || !cfg.key || !window.supabase) return null;
-  state.supabaseClient = window.supabase.createClient(cfg.url,cfg.key);
-  state.supabaseClient.auth.onAuthStateChange((_e,session)=>state.supabaseSession=session);
+  state.supabaseClient = window.supabase.createClient(cfg.url,cfg.key, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
+  state.supabaseClient.auth.onAuthStateChange((_e,session)=>state.supabaseSession=session || null);
   return state.supabaseClient;
+}
+function withTimeout(promise, ms, label='Request'){
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=>setTimeout(()=>reject(new Error(`${label} quá thời gian chờ ${Math.round(ms/1000)}s`)), ms))
+  ]);
+}
+async function ensureSupaSession(){
+  const c=state.supabaseClient || initSupabase();
+  if(!c) return null;
+  if(state.supabaseSession?.access_token) return state.supabaseSession;
+  try{
+    const {data,error}=await withTimeout(c.auth.getSession(), 12000, 'Lấy session Supabase');
+    if(error) throw error;
+    state.supabaseSession = data?.session || null;
+    return state.supabaseSession;
+  }catch(e){
+    console.warn('ensureSupaSession lỗi:', e);
+    return null;
+  }
 }
 function mapSignalToRow(s){
   return {id:s.id, symbol:s.symbol, side:s.side, status:s.status, interval:s.interval, score:s.edgeScore||s.score, signal_time:new Date(s.signalTime||Date.now()).toISOString(), updated_at:new Date().toISOString(), payload:{...s,__cloudUpdatedAt:new Date().toISOString()}};
 }
 function rowToSignal(row){ return row.payload ? {...row.payload,__cloudUpdatedAt:row.updated_at} : row; }
 async function signInSupabase(){
+  if(state.cloudBusy) return setStatus('Cloud đang xử lý, chờ xong rồi bấm lại.');
   const c=state.supabaseClient || initSupabase();
-  if(!c) return setStatus('Thiếu Supabase URL/key.');
-  const {data,error}=await c.auth.signInWithPassword({email:$('supaEmail').value.trim(), password:$('supaPass').value});
-  if(error) return setStatus('Login Supabase lỗi: '+error.message);
-  state.supabaseSession=data.session; setStatus(`Login Supabase thành công: ${data.user.email}. Đang pull cloud...`); await pullSupabase();
+  if(!c) return setStatus('Thiếu Supabase URL/key hoặc chưa tải được thư viện Supabase.');
+  state.cloudBusy=true;
+  setStatus('Đang login Supabase...');
+  try{
+    const {data,error}=await withTimeout(c.auth.signInWithPassword({email:$('supaEmail').value.trim(), password:$('supaPass').value}), 20000, 'Login Supabase');
+    if(error) throw error;
+    state.supabaseSession=data.session;
+    setStatus(`Login Supabase thành công: ${data.user.email}. Đang pull cloud...`);
+  }catch(e){
+    state.cloudBusy=false;
+    return setStatus('Login Supabase lỗi: '+(e.message||e));
+  }
+  state.cloudBusy=false;
+  await pullSupabase();
 }
 async function syncToSupabaseIfReady(){
   if (!state.supabaseClient || state.cloudBusy) return;
@@ -945,34 +978,50 @@ async function syncToSupabaseIfReady(){
   await pushSupabase(false);
 }
 async function pushSupabase(show=true){
+  if(state.cloudBusy) { if(show) setStatus('Cloud đang xử lý, chờ xong rồi bấm lại.'); return; }
   const c=state.supabaseClient || initSupabase();
   const session = await ensureSupaSession();
   if(!c || !session) { if(show) setStatus('Chưa login Supabase. Hãy bấm Login + Pull trước.'); return; }
   state.cloudBusy=true;
   try{
     const rows=state.signals.slice(0,1000).map(mapSignalToRow);
-    const {error}=await c.from('signals').upsert(rows,{onConflict:'id'});
+    setStatus(`Đang Push Cloud ${rows.length} signals...`);
+    const {error}=await withTimeout(c.from('signals').upsert(rows,{onConflict:'id'}), 30000, 'Push Supabase');
     if(error) throw error;
     if(show) setStatus(`Push cloud xong: ${rows.length} signals.`);
-  }catch(e){ if(show) setStatus('Push cloud lỗi: '+e.message); console.warn(e); }
+  }catch(e){ if(show) setStatus('Push cloud lỗi: '+(e.message||e)); console.warn(e); }
   finally{state.cloudBusy=false;}
 }
 async function pullSupabase(){
+  if(state.cloudBusy) return setStatus('Cloud đang xử lý, chờ xong rồi bấm lại.');
   const c=state.supabaseClient || initSupabase();
   const session = await ensureSupaSession();
   if(!c || !session) return setStatus('Chưa login Supabase. Hãy nhập URL/key/email/password rồi bấm Login + Pull.');
-  setStatus('Đang Pull Cloud...');
-  const {data,error}=await c.from('signals').select('id, updated_at, payload').order('signal_time',{ascending:false}).limit(1000);
-  if(error) return setStatus('Pull Supabase lỗi: '+error.message);
-  const map=new Map(state.signals.map(s=>[s.id,s]));
-  for(const row of data||[]){
-    const cloud=rowToSignal(row), local=map.get(cloud.id);
-    const ct=Date.parse(cloud.__cloudUpdatedAt || row.updated_at || 0), lt=Date.parse(local?.__cloudUpdatedAt || local?.lastCheckedAt || local?.createdAt || 0);
-    if(!local || ct>=lt) map.set(cloud.id,cloud);
+  state.cloudBusy=true;
+  try{
+    setStatus('Đang Pull Cloud: lấy dữ liệu từ Supabase...');
+    const {data,error}=await withTimeout(
+      c.from('signals').select('id, updated_at, payload, signal_time').order('signal_time',{ascending:false}).limit(1000),
+      30000,
+      'Pull Supabase'
+    );
+    if(error) throw error;
+    setStatus(`Đã nhận ${data?.length||0} dòng cloud. Đang merge + repair...`);
+    const map=new Map(state.signals.map(s=>[s.id,s]));
+    for(const row of data||[]){
+      const cloud=rowToSignal(row), local=map.get(cloud.id);
+      const ct=Date.parse(cloud.__cloudUpdatedAt || row.updated_at || 0), lt=Date.parse(local?.__cloudUpdatedAt || local?.lastCheckedAt || local?.createdAt || 0);
+      if(!local || ct>=lt) map.set(cloud.id,cloud);
+    }
+    state.signals=Array.from(map.values()).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1200);
+    const fixed = repairAllInvalidTimeOrders(false);
+    saveJSON(STORE,state.signals); render(); setStatus(`Pull cloud xong: ${data?.length||0} dòng, local hiện có ${state.signals.length}${fixed?`, đã sửa ${fixed} lỗi time-order`:''}.`);
+  }catch(e){
+    console.warn('Pull Supabase lỗi:', e);
+    setStatus('Pull Supabase lỗi: '+(e.message||e));
+  }finally{
+    state.cloudBusy=false;
   }
-  state.signals=Array.from(map.values()).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1200);
-  const fixed = repairAllInvalidTimeOrders(false);
-  saveJSON(STORE,state.signals); render(); setStatus(`Pull cloud xong: ${data?.length||0} dòng, local hiện có ${state.signals.length}${fixed?`, đã sửa ${fixed} lỗi time-order`:''}.`);
 }
 
 function startAuto(){
