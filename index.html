@@ -589,6 +589,7 @@ function computeLearning(){
     x.evSum += Number.isFinite(+s.ev) ? +s.ev : 0;
   };
   for (const s of state.signals) {
+    if (invalidTimeOrderReason(s)) continue;
     if (!statusClosed(s)) continue;
     const mk={type:s.marketRegime||'UNKNOWN'};
     const keys=learningKeys({symbol:s.symbol,side:s.side,playbook:s.playbook,market:mk});
@@ -687,6 +688,7 @@ async function scan(){
 }
 
 async function trackAll(){
+  repairAllInvalidTimeOrders(false);
   const list = state.signals.filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY');
   if (!list.length) return setStatus('Không có signal active để track.');
   setStatus(`Đang forward-track ${list.length} signal bằng nến ${getCfg().trackInterval}...`);
@@ -701,22 +703,60 @@ async function trackAll(){
   setStatus(`Track xong ${list.length} signal. Learning stats đã cập nhật theo outcome mới.`);
   await syncToSupabaseIfReady();
 }
-function repairInvalidTimeOrder(s){
+function invalidTimeOrderReason(s){
   const e = +s.entryHitTime || 0;
-  if (!e) return false;
-  const badTp1 = s.tp1HitTime && +s.tp1HitTime < e;
-  const badTp2 = s.tp2HitTime && +s.tp2HitTime < e;
-  const badSl = s.slHitTime && +s.slHitTime < e;
-  const badClose = s.closeTime && +s.closeTime < e;
-  if (!(badTp1 || badTp2 || badSl || badClose)) return false;
-  s.notes = [...(s.notes||[]), 'Sửa lỗi time-order: TP/SL/Close trước Entry nên không tính outcome cũ.'];
+  const tp1 = +s.tp1HitTime || 0;
+  const tp2 = +s.tp2HitTime || 0;
+  const sl = +s.slHitTime || 0;
+  const close = +s.closeTime || 0;
+
+  // Không có Entry nhưng đã có TP/SL là dữ liệu không hợp lệ.
+  // Riêng EXPIRED_NO_ENTRY có closeTime mà không có Entry là hợp lệ.
+  if (!e && (tp1 || tp2 || sl)) return 'TP/SL đã được ghi khi chưa có Entry.';
+  if (!e) return '';
+
+  if (tp1 && tp1 <= e) return 'TP1 xảy ra trước hoặc cùng thời điểm Entry.';
+  if (tp2 && tp2 <= e) return 'TP2 xảy ra trước hoặc cùng thời điểm Entry.';
+  if (sl && sl <= e) return 'SL xảy ra trước hoặc cùng thời điểm Entry.';
+  if (close && close < e) return 'Close xảy ra trước Entry.';
+  if (tp2 && tp1 && tp2 < tp1) return 'TP2 xảy ra trước TP1.';
+  if (String(s.result||s.status||'').includes('TP2') && !tp2) return 'Trạng thái TP2 nhưng thiếu tp2HitTime.';
+  return '';
+}
+function repairInvalidTimeOrder(s){
+  const reason = invalidTimeOrderReason(s);
+  if (!reason) return false;
+
+  const oldStatus = s.status || '-';
+  const oldResult = s.result || '-';
+  const cleanNotes = (s.notes||[]).filter(n => !/TP1 hit|TP2 hit|SL hit|Close|Sửa lỗi time-order/i.test(String(n)));
+  const stamp = new Date().toLocaleString('vi-VN');
+
+  s.notes = [
+    ...cleanNotes,
+    `Sửa lỗi time-order ${stamp}: ${reason} Outcome cũ ${oldStatus}/${oldResult} bị xóa, sẽ track lại từ sau Entry.`
+  ];
   s.tp1HitTime = null;
   s.tp2HitTime = null;
   s.slHitTime = null;
   s.closeTime = null;
   s.result = null;
-  s.status = 'ENTRY_FILLED';
+  s.status = s.entryHitTime ? 'ENTRY_FILLED' : 'WAIT_ENTRY';
+  s.dataIssue = 'REPAIRED_TIME_ORDER';
+  s.lastCheckedAt = new Date().toISOString();
+  s.__cloudUpdatedAt = new Date().toISOString();
   return true;
+}
+function repairAllInvalidTimeOrders(show=false){
+  let fixed = 0;
+  for (const s of state.signals) if (repairInvalidTimeOrder(s)) fixed++;
+  if (fixed) {
+    saveJSON(STORE,state.signals);
+    if (show) setStatus(`Đã sửa ${fixed} signal lỗi time-order. Hãy bấm Push Cloud để ghi đè bản lỗi trên Supabase.`);
+  } else if (show) {
+    setStatus('Không phát hiện signal lỗi time-order.');
+  }
+  return fixed;
 }
 async function trackOne(s){
   repairInvalidTimeOrder(s);
@@ -835,7 +875,8 @@ function dateFmt(t){ return t ? new Date(t).toLocaleString('vi-VN') : '-'; }
 function escapeHTML(str){ return String(str).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
 
 function renderMetrics(){
-  const sig=state.signals, closed=sig.filter(statusClosed), evs=closed.map(s=>+s.ev).filter(Number.isFinite);
+  repairAllInvalidTimeOrders(false);
+  const sig=state.signals, closed=sig.filter(s=>!invalidTimeOrderReason(s) && statusClosed(s)), evs=closed.map(s=>+s.ev).filter(Number.isFinite);
   $('mRaw').textContent=state.raw.length;
   $('mShadow').textContent=sig.filter(s=>s.bucket==='SHADOW_TEST' && statusOpen(s)).length;
   $('mForward').textContent=sig.filter(s=>s.bucket==='FORWARD_TEST' && statusOpen(s)).length;
@@ -869,7 +910,8 @@ async function importJSON(file){
   const txt=await file.text(); const data=JSON.parse(txt);
   if (Array.isArray(data)) state.signals=data;
   else { if (Array.isArray(data.raw)) state.raw=data.raw; if (Array.isArray(data.signals)) state.signals=data.signals; if (data.cfg) applyCfg(data.cfg); }
-  saveJSON(RAW_STORE,state.raw); saveJSON(STORE,state.signals); saveCfg(); render(); setStatus('Import JSON xong.');
+  const fixed = repairAllInvalidTimeOrders(false);
+  saveJSON(RAW_STORE,state.raw); saveJSON(STORE,state.signals); saveCfg(); render(); setStatus(`Import JSON xong${fixed?`, đã sửa ${fixed} signal lỗi time-order`:''}.`);
 }
 
 function supaSettings(){ return loadJSON(SUPA_STORE, {}); }
@@ -923,7 +965,8 @@ async function pullSupabase(){
     if(!local || ct>=lt) map.set(cloud.id,cloud);
   }
   state.signals=Array.from(map.values()).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1200);
-  saveJSON(STORE,state.signals); render(); setStatus(`Pull cloud xong: ${data?.length||0} dòng, local hiện có ${state.signals.length}.`);
+  const fixed = repairAllInvalidTimeOrders(false);
+  saveJSON(STORE,state.signals); render(); setStatus(`Pull cloud xong: ${data?.length||0} dòng, local hiện có ${state.signals.length}${fixed?`, đã sửa ${fixed} lỗi time-order`:''}.`);
 }
 
 function startAuto(){
@@ -935,7 +978,7 @@ function startAuto(){
 document.addEventListener('DOMContentLoaded', ()=>{
   applyCfg(state.cfg);
   const sup=supaSettings(); if(sup.url) $('supaUrl').value=sup.url; if(sup.key) $('supaKey').value=sup.key; if(sup.email) $('supaEmail').value=sup.email;
-  $('scanBtn').onclick=scan; $('trackBtn').onclick=trackAll; $('autoBtn').onclick=startAuto; $('exportBtn').onclick=exportJSON;
+  $('scanBtn').onclick=scan; $('trackBtn').onclick=trackAll; $('repairBtn').onclick=()=>{ repairAllInvalidTimeOrders(true); render(); }; $('autoBtn').onclick=startAuto; $('exportBtn').onclick=exportJSON;
   $('importBtn').onclick=()=>$('importFile').click(); $('importFile').onchange=e=>e.target.files[0]&&importJSON(e.target.files[0]);
   $('saveCfg').onclick=saveCfg; $('resetCfg').onclick=()=>applyPreset($('preset').value); $('preset').onchange=e=>applyPreset(e.target.value);
   $('supaLogin').onclick=signInSupabase; $('supaPush').onclick=()=>pushSupabase(true); $('supaPull').onclick=pullSupabase;
@@ -945,7 +988,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   $('search').oninput=render; $('sortBy').onchange=render;
   $('tabs').onclick=e=>{ if(e.target.matches('button[data-tab]')){ [...$('tabs').querySelectorAll('button')].forEach(b=>b.classList.remove('active')); e.target.classList.add('active'); state.activeTab=e.target.dataset.tab; render(); }};
   initSupabase();
+  const fixedOnLoad = repairAllInvalidTimeOrders(false);
   render();
+  if (fixedOnLoad) setStatus(`Đã tự sửa ${fixedOnLoad} signal lỗi time-order trong local. Bấm Push Cloud để ghi đè dữ liệu lỗi trên Supabase.`);
 });
 </script>
 </body>
