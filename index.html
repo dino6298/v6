@@ -88,7 +88,9 @@
     <div>
       <h1>FTA v6 Edge Lab</h1>
       <div class="sub">
-        https://rojfgyhbalzjmjoqhlsc.supabase.co - sb_publishable_mutOsgEp_RPrq-CU_quR1A_DHQ4AhzY
+        Outcome-driven futures assistant: scan rộng để thu thập mẫu, tự đưa tín hiệu vào Shadow/Forward Test,
+        học xác suất Entry Fill / TP1 before SL / TP2 / Expired Risk, rồi mới nâng cấp tín hiệu lên Trade Ready.
+        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh.
       </div>
     </div>
     <div class="top-actions">
@@ -339,7 +341,10 @@ async function getKlines(symbol, interval, limit=220, startTime){
   const params = {symbol, interval, limit};
   if (startTime) params.startTime = startTime;
   const rows = await api('/fapi/v1/klines', params);
-  return rows.map(candleFromK);
+  return rows
+    .map(candleFromK)
+    .filter(k => Number.isFinite(k.openTime) && Number.isFinite(k.closeTime))
+    .sort((a,b)=>(a.openTime||0)-(b.openTime||0));
 }
 async function getUniverse(){
   const cfg = getCfg();
@@ -696,42 +701,76 @@ async function trackAll(){
   setStatus(`Track xong ${list.length} signal. Learning stats đã cập nhật theo outcome mới.`);
   await syncToSupabaseIfReady();
 }
+function repairInvalidTimeOrder(s){
+  const e = +s.entryHitTime || 0;
+  if (!e) return false;
+  const badTp1 = s.tp1HitTime && +s.tp1HitTime < e;
+  const badTp2 = s.tp2HitTime && +s.tp2HitTime < e;
+  const badSl = s.slHitTime && +s.slHitTime < e;
+  const badClose = s.closeTime && +s.closeTime < e;
+  if (!(badTp1 || badTp2 || badSl || badClose)) return false;
+  s.notes = [...(s.notes||[]), 'Sửa lỗi time-order: TP/SL/Close trước Entry nên không tính outcome cũ.'];
+  s.tp1HitTime = null;
+  s.tp2HitTime = null;
+  s.slHitTime = null;
+  s.closeTime = null;
+  s.result = null;
+  s.status = 'ENTRY_FILLED';
+  return true;
+}
 async function trackOne(s){
-  const start = Math.max((s.signalTime||Date.now()) - 2*60000, Date.now() - 1000*60*60*24*5);
+  repairInvalidTimeOrder(s);
+  const baseTime = +s.entryHitTime || +s.signalTime || Date.now();
+  const start = Math.max(baseTime - 60000, Date.now() - 1000*60*60*24*5);
   const candles = await getKlines(s.symbol, s.trackInterval || getCfg().trackInterval, 1000, start);
   if (!candles.length) return;
-  const expiry = (s.signalTime||Date.now()) + (s.expireHours || getCfg().expireHours)*3600000;
+  const expiry = (+s.signalTime||Date.now()) + (s.expireHours || getCfg().expireHours)*3600000;
   let entered=!!s.entryHitTime, tp1=!!s.tp1HitTime, closed=statusClosed(s);
   let mfe=s.mfe||0, mae=s.mae||0;
+  let lastT=0;
   for (const k of candles){
-    if ((k.closeTime||k.openTime) < (s.signalTime||0)) continue;
     const t=k.closeTime || k.openTime;
+    if (!Number.isFinite(t) || t <= lastT) continue;
+    lastT=t;
+    if (t < (+s.signalTime||0)) continue;
     if (closed) break;
+
     if (!entered){
       if (touch(k,s.entry)) {
-        entered=true; s.entryHitTime=t; s.status='ENTRY_FILLED'; s.notes=[...(s.notes||[]),`Entry hit ${new Date(t).toLocaleString('vi-VN')}`];
-      } else if (t > expiry) {
-        s.status='EXPIRED_NO_ENTRY'; s.result='EXPIRED_NO_ENTRY'; s.closeTime=t; closed=true; break;
-      } else {
-        s.status='WAIT_ENTRY';
+        entered=true;
+        s.entryHitTime=t;
+        s.status='ENTRY_FILLED';
+        s.notes=[...(s.notes||[]),`Entry hit ${new Date(t).toLocaleString('vi-VN')}`];
+        // Không kiểm TP/SL trong chính nến khớp entry vì OHLC 1m không biết thứ tự giá chạy trong nến.
+        // Target chỉ được tính từ các nến sau entry để tránh TP xuất hiện trước Entry.
         continue;
       }
+      if (t > expiry) {
+        s.status='EXPIRED_NO_ENTRY'; s.result='EXPIRED_NO_ENTRY'; s.closeTime=t; closed=true; break;
+      }
+      s.status='WAIT_ENTRY';
+      continue;
     }
-    if (entered){
-      const moveFav = s.side==='LONG' ? (k.high-s.entry)/(Math.abs(s.entry-s.sl))*100 : (s.entry-k.low)/(Math.abs(s.entry-s.sl))*100;
-      const moveAdv = s.side==='LONG' ? (s.entry-k.low)/(Math.abs(s.entry-s.sl))*100 : (k.high-s.entry)/(Math.abs(s.entry-s.sl))*100;
-      mfe=Math.max(mfe,moveFav); mae=Math.max(mae,moveAdv);
-      const hitSL = touch(k,s.sl), hitTP1=touch(k,s.tp1), hitTP2=s.tp2Enabled && s.tp2 && touch(k,s.tp2);
-      // Conservative ambiguity handling: if SL and TP target appear in same 1m candle before TP1, count SL first.
-      if (!tp1 && hitSL && hitTP1) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; s.notes=[...(s.notes||[]),'1m ambiguity: SL & TP1 cùng nến, tính conservative = LOSS']; closed=true; break; }
-      if (!tp1 && hitSL) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; closed=true; break; }
-      if (!tp1 && hitTP1) { tp1=true; s.tp1HitTime=t; s.status='TP1_HIT'; s.result='TP1_HIT_TRACKING_TP2_OR_SL'; s.notes=[...(s.notes||[]),`TP1 hit ${new Date(t).toLocaleString('vi-VN')}`]; }
-      if (tp1 && hitTP2) { s.status='TP2_WIN'; s.result='TP2_WIN'; s.tp2HitTime=t; s.closeTime=t; closed=true; break; }
-      if (tp1 && hitSL) { s.status='TP1_ONLY'; s.result='TP1_THEN_SL'; s.slHitTime=t; s.closeTime=t; closed=true; break; }
-      if (t > expiry && !tp1) { s.status='EXPIRED_AFTER_ENTRY_NO_TP1'; s.result='EXPIRED_AFTER_ENTRY_NO_TP1'; s.closeTime=t; closed=true; break; }
-      if (t > expiry && tp1) { s.status='EXPIRED_AFTER_TP1_NO_TP2'; s.result='EXPIRED_AFTER_TP1_NO_TP2'; s.closeTime=t; closed=true; break; }
-    }
+
+    // Bắt buộc mọi TP/SL phải nằm sau thời điểm Entry.
+    if (s.entryHitTime && t <= +s.entryHitTime) continue;
+
+    const moveFav = s.side==='LONG' ? (k.high-s.entry)/(Math.abs(s.entry-s.sl))*100 : (s.entry-k.low)/(Math.abs(s.entry-s.sl))*100;
+    const moveAdv = s.side==='LONG' ? (s.entry-k.low)/(Math.abs(s.entry-s.sl))*100 : (k.high-s.entry)/(Math.abs(s.entry-s.sl))*100;
+    mfe=Math.max(mfe,moveFav); mae=Math.max(mae,moveAdv);
+
+    const hitSL = touch(k,s.sl), hitTP1=touch(k,s.tp1), hitTP2=s.tp2Enabled && s.tp2 && touch(k,s.tp2);
+    // Conservative ambiguity handling: nếu SL và TP1 cùng xuất hiện trong một nến trước TP1, tính LOSS.
+    if (!tp1 && hitSL && hitTP1) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; s.notes=[...(s.notes||[]),'1m ambiguity: SL & TP1 cùng nến, tính conservative = LOSS']; closed=true; break; }
+    if (!tp1 && hitSL) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; closed=true; break; }
+    if (!tp1 && hitTP1) { tp1=true; s.tp1HitTime=t; s.status='TP1_HIT'; s.result='TP1_HIT_TRACKING_TP2_OR_SL'; s.notes=[...(s.notes||[]),`TP1 hit ${new Date(t).toLocaleString('vi-VN')}`]; }
+    if (tp1 && s.tp1HitTime && t <= +s.tp1HitTime) continue;
+    if (tp1 && hitTP2) { s.status='TP2_WIN'; s.result='TP2_WIN'; s.tp2HitTime=t; s.closeTime=t; closed=true; break; }
+    if (tp1 && hitSL) { s.status='TP1_ONLY'; s.result='TP1_THEN_SL'; s.slHitTime=t; s.closeTime=t; closed=true; break; }
+    if (t > expiry && !tp1) { s.status='EXPIRED_AFTER_ENTRY_NO_TP1'; s.result='EXPIRED_AFTER_ENTRY_NO_TP1'; s.closeTime=t; closed=true; break; }
+    if (t > expiry && tp1) { s.status='EXPIRED_AFTER_TP1_NO_TP2'; s.result='EXPIRED_AFTER_TP1_NO_TP2'; s.closeTime=t; closed=true; break; }
   }
+  repairInvalidTimeOrder(s);
   s.mfe=+mfe.toFixed(2); s.mae=+mae.toFixed(2); s.lastCheckedAt=new Date().toISOString();
 }
 function touch(k, price){ return price != null && k.low <= price && k.high >= price; }
