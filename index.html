@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>FTA v6 Edge Lab - Outcome Driven Futures Assistant</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{
+      --bg:#070a12;--bg2:#0a1120;--panel:#0f1728;--panel2:#121e33;--panel3:#0b1322;
+      --text:#eaf1ff;--muted:#91a3bf;--border:#263550;--good:#20d489;--bad:#ff5c7a;
+      --warn:#ffd166;--blue:#7dd3fc;--purple:#a78bfa;--orange:#fb923c;
+      --shadow:0 18px 50px rgba(0,0,0,.28);
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at top left,#13233b 0,var(--bg) 36%,#05070c 100%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{width:min(98vw,2200px);margin:0 auto;padding:clamp(10px,1.2vw,22px)}
+    header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+    h1{margin:0 0 6px;font-size:clamp(22px,2vw,34px);letter-spacing:-.04em}
+    .sub{max-width:1100px;color:var(--muted);line-height:1.45;font-size:14px}
+    .top-actions{display:grid;grid-template-columns:repeat(5,minmax(135px,1fr));gap:8px;min-width:min(860px,100%)}
+    .sticky{position:sticky;top:0;z-index:30;background:rgba(7,10,18,.94);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:18px;padding:10px;margin-bottom:12px;box-shadow:var(--shadow)}
+    .status{min-height:43px;border:1px solid var(--border);border-radius:14px;padding:10px 12px;background:#0b1220;color:var(--muted);font-size:13px;line-height:1.4}
+    .layout{display:grid;grid-template-columns:clamp(310px,20vw,390px) minmax(0,1fr);gap:12px}
+    .card{background:rgba(15,23,40,.92);border:1px solid var(--border);border-radius:18px;padding:14px;box-shadow:var(--shadow)}
+    .card h2,.card h3{margin:0 0 10px}
+    .card h2{font-size:18px}.card h3{font-size:15px}
+    .controls{display:grid;gap:10px}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    label{display:grid;gap:5px;color:var(--muted);font-size:12px}
+    input,select,button,textarea{width:100%;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text);padding:10px 11px;font-size:13px}
+    textarea{min-height:78px;resize:vertical}
+    button{cursor:pointer;background:linear-gradient(135deg,#2862ff,#7c3cff);border:0;font-weight:850;letter-spacing:-.01em}
+    button.secondary{background:var(--panel2);border:1px solid var(--border)}
+    button.danger{background:linear-gradient(135deg,#ff496d,#9f1239)}
+    button.goodbtn{background:linear-gradient(135deg,#059669,#20d489);color:#06140d}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    .pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 8px;background:#0b1220;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}
+    .tag{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;white-space:nowrap}
+    .long{background:rgba(32,212,137,.16);color:var(--good);border:1px solid rgba(32,212,137,.42)}
+    .short{background:rgba(255,92,122,.16);color:var(--bad);border:1px solid rgba(255,92,122,.42)}
+    .shadowTag{background:rgba(167,139,250,.16);color:var(--purple);border:1px solid rgba(167,139,250,.42)}
+    .forwardTag{background:rgba(125,211,252,.14);color:var(--blue);border:1px solid rgba(125,211,252,.38)}
+    .tradeTag{background:rgba(32,212,137,.16);color:var(--good);border:1px solid rgba(32,212,137,.42)}
+    .rawTag{background:rgba(251,146,60,.15);color:var(--orange);border:1px solid rgba(251,146,60,.38)}
+    .lossTag{background:rgba(255,92,122,.15);color:var(--bad);border:1px solid rgba(255,92,122,.38)}
+    .warnTag{background:rgba(255,209,102,.14);color:var(--warn);border:1px solid rgba(255,209,102,.38)}
+    .grid-metrics{display:grid;grid-template-columns:repeat(8,minmax(120px,1fr));gap:8px;margin-bottom:12px}
+    .mini{border:1px solid var(--border);border-radius:16px;background:#0b1220;padding:11px;color:var(--muted)}
+    .mini span{display:block;font-size:11px;margin-bottom:5px}.mini b{display:block;color:var(--text);font-size:20px;line-height:1.1}
+    .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+    .tabs button{width:auto;padding:9px 13px;background:#0b1220;border:1px solid var(--border)}
+    .tabs button.active{background:linear-gradient(135deg,#2862ff,#7c3cff);border:0}
+    .tablebox{overflow:auto;border:1px solid var(--border);border-radius:18px;background:rgba(11,18,32,.72)}
+    table{width:100%;border-collapse:collapse;min-width:1280px}
+    th,td{padding:10px 9px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:top;text-align:left}
+    th{position:sticky;top:0;background:#101a2d;color:var(--muted);z-index:2}
+    tbody tr:hover{background:rgba(125,211,252,.06)}
+    .symbol{font-weight:950;color:var(--text);text-decoration:none;font-size:13px}
+    .symbol:hover{color:var(--blue);text-decoration:underline}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:var(--muted);word-break:break-all}
+    .score{font-size:20px;font-weight:950;letter-spacing:-.03em}
+    .good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}.blue{color:var(--blue)}.muted{color:var(--muted)}
+    .progress{height:8px;border-radius:999px;background:#09111f;border:1px solid var(--border);overflow:hidden;margin-top:5px}
+    .bar{height:100%;background:linear-gradient(90deg,#2862ff,#20d489);width:0%}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .learning-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .learn-card{border:1px solid var(--border);border-radius:16px;background:#0b1220;padding:12px}
+    .learn-card b{font-size:16px}.learn-card .meta{color:var(--muted);font-size:12px;margin-top:5px;line-height:1.35}
+    .notice{border:1px solid rgba(255,209,102,.35);background:rgba(255,209,102,.08);border-radius:14px;padding:10px 12px;color:#ffe2a0;font-size:12px;line-height:1.45;margin-top:8px}
+    .hide{display:none!important}
+    @media(max-width:1200px){
+      header{display:block}.top-actions{grid-template-columns:1fr 1fr;margin-top:10px}
+      .layout{grid-template-columns:1fr}.grid-metrics{grid-template-columns:repeat(2,1fr)}
+      .learning-grid{grid-template-columns:1fr}.split{grid-template-columns:1fr}
+    }
+    @media(max-width:640px){
+      .wrap{width:100vw;padding:10px}.top-actions,.row,.row3{grid-template-columns:1fr}.grid-metrics{grid-template-columns:1fr}
+      .tabs{overflow:auto;flex-wrap:nowrap}.tabs button{white-space:nowrap}
+      .card{padding:12px;border-radius:16px}table{min-width:1100px}
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>FTA v6 Edge Lab</h1>
+      <div class="sub">
+        Outcome-driven futures assistant: scan rộng để thu thập mẫu, tự đưa tín hiệu vào Shadow/Forward Test,
+        học xác suất Entry Fill / TP1 before SL / TP2 / Expired Risk, rồi mới nâng cấp tín hiệu lên Trade Ready.
+        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh.
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="scanBtn">Scan + Auto Add</button>
+      <button id="trackBtn" class="goodbtn">Track 1m Now</button>
+      <button id="autoBtn" class="secondary">Auto: OFF</button>
+      <button id="exportBtn" class="secondary">Export JSON</button>
+      <button id="importBtn" class="secondary">Import JSON</button>
+      <input id="importFile" class="hide" type="file" accept="application/json,.json" />
+    </div>
+  </header>
+
+  <div class="sticky">
+    <div id="status" class="status">Sẵn sàng. Khuyến nghị bắt đầu bằng Research mode để tool thu thập đủ dữ liệu trước khi dùng Trade Assist.</div>
+    <div class="progress"><div id="progressBar" class="bar"></div></div>
+  </div>
+
+  <div class="layout">
+    <aside class="card">
+      <h2>Preset & Data</h2>
+      <div class="controls">
+        <label>Preset
+          <select id="preset">
+            <option value="RESEARCH">Research - học nhiều nhất</option>
+            <option value="BALANCED">Balanced Forward Test</option>
+            <option value="TRADE">Trade Assist - lọc chặt</option>
+          </select>
+        </label>
+        <div class="row">
+          <label>Main TF
+            <select id="interval"><option>5m</option><option selected>15m</option><option>1h</option></select>
+          </label>
+          <label>Track TF
+            <select id="trackInterval"><option selected>1m</option><option>3m</option><option>5m</option></select>
+          </label>
+        </div>
+        <div class="row">
+          <label>Top symbols <input id="topN" type="number" min="5" max="80" value="30"></label>
+          <label>Min 24h Vol USDT <input id="minVol" type="number" min="0" step="1000000" value="50000000"></label>
+        </div>
+        <div class="row">
+          <label>Min raw score <input id="minRaw" type="number" min="0" max="100" value="45"></label>
+          <label>Expire hours <input id="expireHours" type="number" min="1" max="24" value="5"></label>
+        </div>
+        <div class="row">
+          <label>Forward TP1% min <input id="forwardTp1" type="number" min="0" max="100" value="40"></label>
+          <label>Trade TP1% min <input id="tradeTp1" type="number" min="0" max="100" value="58"></label>
+        </div>
+        <div class="row">
+          <label>Side
+            <select id="sideMode"><option value="BOTH" selected>LONG + SHORT</option><option>LONG</option><option>SHORT</option></select>
+          </label>
+          <label>Playbook
+            <select id="playbookMode">
+              <option value="ALL" selected>All playbooks</option>
+              <option value="TREND_PULLBACK">Trend Pullback</option>
+              <option value="BREAKOUT_CONTINUATION">Breakout</option>
+              <option value="REVERSAL_SWEEP">Reversal Sweep</option>
+              <option value="RANGE_SCALP">Range Scalp</option>
+            </select>
+          </label>
+        </div>
+        <label>Symbol universe, để trống = tự lấy top volume Binance
+          <textarea id="symbols" placeholder="BTCUSDT,ETHUSDT,SOLUSDT,SUIUSDT"></textarea>
+        </label>
+        <label>Binance proxy URL, tùy chọn
+          <input id="proxyUrl" placeholder="https://your-worker.workers.dev">
+        </label>
+        <div class="row">
+          <button id="saveCfg" class="secondary">Lưu config</button>
+          <button id="resetCfg" class="secondary">Reset preset</button>
+        </div>
+      </div>
+
+      <div class="notice">
+        V6 không hard-block learning ở tầng scan. Signal yếu vẫn được Shadow Test để học. Chỉ tầng Trade Ready mới lọc chặt.
+      </div>
+
+      <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+      <h2>Supabase Sync</h2>
+      <div class="controls">
+        <label>Project URL <input id="supaUrl" placeholder="https://xxxx.supabase.co"></label>
+        <label>Anon key <input id="supaKey" placeholder="anon public key"></label>
+        <div class="row">
+          <label>Email <input id="supaEmail" placeholder="email"></label>
+          <label>Password <input id="supaPass" type="password" placeholder="password không lưu"></label>
+        </div>
+        <div class="row">
+          <button id="supaLogin" class="secondary">Login + Pull</button>
+          <button id="supaPush" class="secondary">Push Cloud</button>
+        </div>
+        <button id="supaPull" class="secondary">Pull Cloud</button>
+      </div>
+
+      <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+      <h2>Danger zone</h2>
+      <div class="row">
+        <button id="clearRaw" class="secondary">Clear Raw</button>
+        <button id="clearClosed" class="secondary">Clear Closed</button>
+      </div>
+      <button id="clearAll" class="danger" style="margin-top:8px">Clear All Local</button>
+    </aside>
+
+    <main>
+      <section class="grid-metrics">
+        <div class="mini"><span>Raw Scan</span><b id="mRaw">0</b></div>
+        <div class="mini"><span>Shadow</span><b id="mShadow">0</b></div>
+        <div class="mini"><span>Forward</span><b id="mForward">0</b></div>
+        <div class="mini"><span>Trade Ready</span><b id="mTrade">0</b></div>
+        <div class="mini"><span>TP2 / TP1</span><b id="mWin">0 / 0</b></div>
+        <div class="mini"><span>Loss / Weak</span><b id="mLoss">0 / 0</b></div>
+        <div class="mini"><span>TP1 Rate</span><b id="mTp1Rate">0%</b></div>
+        <div class="mini"><span>EV Avg</span><b id="mEv">0R</b></div>
+      </section>
+
+      <section class="card">
+        <div class="tabs" id="tabs">
+          <button data-tab="raw" class="active">Raw Scan</button>
+          <button data-tab="shadow">Shadow Test</button>
+          <button data-tab="forward">Forward Test</button>
+          <button data-tab="trade">Trade Ready</button>
+          <button data-tab="active">Active</button>
+          <button data-tab="closed">Closed</button>
+          <button data-tab="learning">Learning Stats</button>
+          <button data-tab="debug">Debug</button>
+        </div>
+        <div class="row" style="margin-bottom:10px">
+          <input id="search" placeholder="Tìm symbol / playbook / status">
+          <select id="sortBy">
+            <option value="edge">Sort: Edge Score</option>
+            <option value="tp1">Sort: TP1 Probability</option>
+            <option value="time">Sort: Time</option>
+            <option value="ev">Sort: EV</option>
+          </select>
+        </div>
+        <div id="tableView" class="tablebox"></div>
+        <div id="learningView" class="hide"></div>
+        <div id="debugView" class="hide"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+/* FTA v6 Edge Lab - single file research tool. Not financial advice. */
+const $ = id => document.getElementById(id);
+const STORE = 'fta_v6_edge_lab_signals';
+const RAW_STORE = 'fta_v6_edge_lab_raw';
+const CFG_STORE = 'fta_v6_edge_lab_cfg';
+const SUPA_STORE = 'fta_v6_edge_lab_supa';
+const SAFE_UNIVERSE = ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT','SUIUSDT','DOGEUSDT','LINKUSDT','BCHUSDT','ADAUSDT','AVAXUSDT','LTCUSDT','DOTUSDT','UNIUSDT','NEARUSDT','WLDUSDT','HYPEUSDT','1000PEPEUSDT','AAVEUSDT','FILUSDT','APTUSDT','ARBUSDT','OPUSDT','INJUSDT','TIAUSDT','SEIUSDT'];
+
+let state = {
+  raw: loadJSON(RAW_STORE, []),
+  signals: loadJSON(STORE, []),
+  cfg: loadJSON(CFG_STORE, {}),
+  market: null,
+  activeTab: 'raw',
+  autoTimer: null,
+  supabaseClient: null,
+  supabaseSession: null,
+  cloudBusy: false
+};
+let memoryCache = new Map();
+
+function loadJSON(key, fallback){ try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; } catch { return fallback; } }
+function saveJSON(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+function clamp(n,a,b){ return Math.max(a, Math.min(b, Number(n)||0)); }
+function mean(arr){ const x = arr.filter(Number.isFinite); return x.length ? x.reduce((a,b)=>a+b,0)/x.length : NaN; }
+function fmt(n,d=4){ return Number.isFinite(+n) ? (+n).toLocaleString('en-US',{maximumFractionDigits:d}) : '-'; }
+function pct(n,d=0){ return Number.isFinite(+n) ? `${(+n).toFixed(d)}%` : '-'; }
+function now(){ return Date.now(); }
+function setStatus(msg){ $('status').textContent = msg; }
+function setProgress(p){ $('progressBar').style.width = `${clamp(p,0,100)}%`; }
+function binanceUrl(symbol){ return `https://www.binance.com/en/futures/${symbol}`; }
+function statusOpen(s){ return ['WAIT_ENTRY','ENTRY_FILLED','TP1_HIT','NEW','OPEN'].includes(s.status); }
+function statusClosed(s){ return ['TP2_WIN','TP1_ONLY','LOSS','EXPIRED_NO_ENTRY','EXPIRED_AFTER_ENTRY_NO_TP1','EXPIRED_AFTER_TP1_NO_TP2','INVALIDATED'].includes(s.status) || s.result; }
+function isTp2(s){ return ['TP2_WIN','TP2_HIT','TP2_HIT_FULL_WIN'].includes(s.status) || ['TP2_WIN','TP2_HIT','TP2_HIT_FULL_WIN'].includes(s.result); }
+function isTp1(s){ return isTp2(s) || ['TP1_ONLY','TP1_HIT','TP1_THEN_SL','EXPIRED_AFTER_TP1_NO_TP2'].includes(s.status) || ['TP1_ONLY','TP1_HIT','TP1_THEN_SL','EXPIRED_AFTER_TP1_NO_TP2'].includes(s.result); }
+function isLoss(s){ return s.status === 'LOSS' || s.result === 'LOSS'; }
+function isWeak(s){ return s.status === 'EXPIRED_AFTER_ENTRY_NO_TP1' || s.result === 'EXPIRED_AFTER_ENTRY_NO_TP1'; }
+function resultKind(s){
+  if (isTp2(s)) return 'TP2';
+  if (isLoss(s)) return 'LOSS';
+  if (isWeak(s)) return 'WEAK';
+  if (isTp1(s)) return 'TP1';
+  if (s.status === 'EXPIRED_NO_ENTRY' || s.result === 'EXPIRED_NO_ENTRY') return 'NO_ENTRY';
+  return statusOpen(s) ? 'ACTIVE' : 'OTHER';
+}
+
+const PRESETS = {
+  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:60, topN:35, minVol:30000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL'},
+  BALANCED:{minRaw:50, forwardTp1:42, tradeTp1:58, topN:28, minVol:50000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL'},
+  TRADE:{minRaw:58, forwardTp1:48, tradeTp1:62, topN:20, minVol:80000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK'}
+};
+
+function getCfg(){
+  return {
+    preset:$('preset').value,
+    interval:$('interval').value,
+    trackInterval:$('trackInterval').value,
+    topN:+$('topN').value || 30,
+    minVol:+$('minVol').value || 0,
+    minRaw:+$('minRaw').value || 45,
+    forwardTp1:+$('forwardTp1').value || 40,
+    tradeTp1:+$('tradeTp1').value || 58,
+    expireHours:+$('expireHours').value || 5,
+    sideMode:$('sideMode').value,
+    playbookMode:$('playbookMode').value,
+    symbols:$('symbols').value.trim(),
+    proxyUrl:$('proxyUrl').value.trim().replace(/\/$/,''),
+    sortBy:$('sortBy').value
+  };
+}
+function applyCfg(cfg={}){
+  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', ...cfg};
+  for (const [k,v] of Object.entries(merged)) if ($(k)) $(k).value = v;
+}
+function saveCfg(){ state.cfg = getCfg(); saveJSON(CFG_STORE, state.cfg); setStatus('Đã lưu config local.'); }
+function applyPreset(name){
+  const cur = getCfg();
+  applyCfg({...cur, ...PRESETS[name], preset:name});
+  saveCfg();
+  setStatus(`Đã áp preset ${name}.`);
+}
+
+function candleFromK(k){
+  return {openTime:k[0], open:+k[1], high:+k[2], low:+k[3], close:+k[4], volume:+k[5], closeTime:k[6], quoteVolume:+k[7]};
+}
+function qs(params){ return new URLSearchParams(Object.entries(params).filter(([,v]) => v !== undefined && v !== null && v !== '')).toString(); }
+async function api(path, params={}){
+  const cfg = getCfg();
+  const query = qs(params);
+  const direct = `https://fapi.binance.com${path}${query ? '?' + query : ''}`;
+  let url = direct;
+  if (cfg.proxyUrl) url = `${cfg.proxyUrl}${path}${query ? '?' + query : ''}`;
+  const cacheKey = url;
+  const ttl = path.includes('/ticker/24hr') ? 25000 : path.includes('/exchangeInfo') ? 3600000 : 6000;
+  const cached = memoryCache.get(cacheKey);
+  if (cached && Date.now()-cached.t < ttl) return cached.v;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${path}`);
+  const data = await res.json();
+  memoryCache.set(cacheKey,{t:Date.now(),v:data});
+  return data;
+}
+async function getKlines(symbol, interval, limit=220, startTime){
+  const params = {symbol, interval, limit};
+  if (startTime) params.startTime = startTime;
+  const rows = await api('/fapi/v1/klines', params);
+  return rows.map(candleFromK);
+}
+async function getUniverse(){
+  const cfg = getCfg();
+  if (cfg.symbols) return cfg.symbols.split(/[,\n\s]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+  try {
+    const tickers = await api('/fapi/v1/ticker/24hr');
+    return tickers
+      .filter(t => t.symbol.endsWith('USDT') && !t.symbol.includes('_') && +t.quoteVolume >= cfg.minVol)
+      .sort((a,b)=>+b.quoteVolume-+a.quoteVolume)
+      .slice(0,cfg.topN)
+      .map(t=>t.symbol);
+  } catch(e) {
+    setStatus(`Không lấy được universe Binance, dùng Safe Universe. Lý do: ${e.message}`);
+    return SAFE_UNIVERSE.slice(0,cfg.topN);
+  }
+}
+
+function ema(values, period){
+  const k = 2/(period+1), out = [];
+  let prev = values.slice(0,period).reduce((a,b)=>a+b,0)/period;
+  for (let i=0;i<values.length;i++){
+    if (i < period-1) out.push(NaN);
+    else if (i === period-1) out.push(prev);
+    else { prev = values[i]*k + prev*(1-k); out.push(prev); }
+  }
+  return out;
+}
+function rsi(values, period=14){
+  const out = Array(values.length).fill(NaN); let gain=0, loss=0;
+  for (let i=1;i<=period;i++){ const d=values[i]-values[i-1]; if(d>=0) gain+=d; else loss-=d; }
+  gain/=period; loss/=period; out[period] = loss===0 ? 100 : 100 - 100/(1+gain/loss);
+  for (let i=period+1;i<values.length;i++){ const d=values[i]-values[i-1]; gain=(gain*(period-1)+Math.max(d,0))/period; loss=(loss*(period-1)+Math.max(-d,0))/period; out[i]=loss===0?100:100-100/(1+gain/loss); }
+  return out;
+}
+function atr(c, period=14){
+  const tr = c.map((x,i)=> i ? Math.max(x.high-x.low, Math.abs(x.high-c[i-1].close), Math.abs(x.low-c[i-1].close)) : x.high-x.low);
+  return ema(tr, period);
+}
+function macd(values){
+  const e12=ema(values,12), e26=ema(values,26);
+  const line=values.map((_,i)=>e12[i]-e26[i]);
+  const sig=ema(line.map(x=>Number.isFinite(x)?x:0),9);
+  return {line, signal:sig, hist:line.map((x,i)=>x-sig[i])};
+}
+function adx(c, period=14){
+  const plusDM=[], minusDM=[], tr=[];
+  for (let i=0;i<c.length;i++){
+    if(!i){plusDM.push(0);minusDM.push(0);tr.push(c[i].high-c[i].low);continue;}
+    const up=c[i].high-c[i-1].high, down=c[i-1].low-c[i].low;
+    plusDM.push(up>down&&up>0?up:0); minusDM.push(down>up&&down>0?down:0);
+    tr.push(Math.max(c[i].high-c[i].low,Math.abs(c[i].high-c[i-1].close),Math.abs(c[i].low-c[i-1].close)));
+  }
+  const atrv=ema(tr,period), plus=ema(plusDM,period).map((x,i)=>100*x/atrv[i]), minus=ema(minusDM,period).map((x,i)=>100*x/atrv[i]);
+  const dx=plus.map((p,i)=>100*Math.abs(p-minus[i])/(p+minus[i]||1));
+  return ema(dx.map(x=>Number.isFinite(x)?x:0),period);
+}
+function rolling(values, period, fn){
+  return values.map((_,i)=> i<period-1 ? NaN : fn(values.slice(i-period+1,i+1)));
+}
+function stdev(arr){ const m=mean(arr); return Math.sqrt(mean(arr.map(x=>(x-m)**2))); }
+function vwap(c, period=30){
+  return c.map((_,i)=>{
+    const s=c.slice(Math.max(0,i-period+1),i+1);
+    const pv=s.reduce((a,x)=>a+((x.high+x.low+x.close)/3)*x.volume,0), vol=s.reduce((a,x)=>a+x.volume,0);
+    return pv/(vol||1);
+  });
+}
+function candleQuality(c, i, atrv){
+  const x=c[i], range=x.high-x.low, body=Math.abs(x.close-x.open), wick=range-body;
+  const bodyScore=clamp((body/(range||1))*70,0,70);
+  const atrScore=clamp((range/(atrv||range||1))*20,0,20);
+  const closePos=(x.close-x.low)/(range||1);
+  const posScore=clamp(Math.abs(closePos-.5)*20,0,10);
+  return Math.round(bodyScore+atrScore+posScore);
+}
+function enrich(c){
+  const closes=c.map(x=>x.close);
+  const volumes=c.map(x=>x.volume);
+  const ema20=ema(closes,20), ema50=ema(closes,50), ema100=ema(closes,100), rsiv=rsi(closes,14), atrv=atr(c,14), adxv=adx(c,14), macdv=macd(closes), vwapv=vwap(c,30);
+  const sma20=rolling(closes,20,mean), sd20=rolling(closes,20,stdev);
+  const bbw=closes.map((x,i)=>Number.isFinite(sma20[i])?(4*sd20[i]/sma20[i]*100):NaN);
+  const volAvg=rolling(volumes,20,mean);
+  return {closes, ema20, ema50, ema100, rsi:rsiv, atr:atrv, adx:adxv, macd:macdv, vwap:vwapv, bbw, volAvg};
+}
+function marketRegimeFrom(c){
+  const e=enrich(c), i=c.length-2, last=c[i];
+  const bull=e.ema20[i]>e.ema50[i] && last.close>e.vwap[i], bear=e.ema20[i]<e.ema50[i] && last.close<e.vwap[i];
+  const trend=e.adx[i]>=28 ? 'STRONG' : e.adx[i]>=20 ? 'MEDIUM' : 'WEAK';
+  return {type:bull?'BTC_BULL':bear?'BTC_BEAR':'BTC_RANGE', trend, adx:e.adx[i], change1h:(last.close/c[Math.max(0,i-4)].close-1)*100, ts:Date.now()};
+}
+
+function basicContext(symbol,c){
+  const e=enrich(c), i=c.length-2, last=c[i], prev=c[i-1], atrPct=e.atr[i]/last.close*100;
+  const high20=Math.max(...c.slice(i-20,i).map(x=>x.high)), low20=Math.min(...c.slice(i-20,i).map(x=>x.low));
+  const q=candleQuality(c,i,e.atr[i]);
+  const volSpike=e.volAvg[i] ? last.volume/e.volAvg[i] : 1;
+  const rangePct=(high20-low20)/last.close*100;
+  return {symbol,c,e,i,last,prev,atrPct,high20,low20,quality:q,volSpike,rangePct};
+}
+function sideAllowed(side){ const m=getCfg().sideMode; return m==='BOTH' || m===side; }
+function playbookAllowed(pb){ const m=getCfg().playbookMode; return m==='ALL' || m===pb; }
+
+function detectCandidates(symbol,c,market){
+  const ctx=basicContext(symbol,c), {e,i,last,prev,atrPct,quality,volSpike,high20,low20,rangePct}=ctx;
+  if (!Number.isFinite(e.ema100[i]) || !Number.isFinite(e.adx[i]) || !Number.isFinite(e.vwap[i])) return [];
+  const out=[];
+  const tryPush = (side, playbook, base, reasons) => {
+    if (!sideAllowed(side) || !playbookAllowed(playbook)) return;
+    const built = buildPlan({...ctx, side, playbook, base, reasons, market});
+    if (built) out.push(built);
+  };
+  const close=last.close, ema20=e.ema20[i], ema50=e.ema50[i], vwapv=e.vwap[i], r=e.rsi[i], a=e.adx[i], hist=e.macd.hist[i], histPrev=e.macd.hist[i-1], bbw=e.bbw[i] || 0;
+  const nearEma = Math.abs(close-ema20)/close*100 <= Math.max(.35, atrPct*.9);
+  const nearVwap = Math.abs(close-vwapv)/close*100 <= Math.max(.45, atrPct*1.1);
+  if (ema20>ema50 && close>vwapv && r>=43 && r<=70 && a>=18 && (nearEma || nearVwap)) {
+    let base = 44 + Math.min(18,a/3) + (hist>=histPrev?8:0) + (quality>=58?8:0) + (market.type==='BTC_BULL'?8:market.type==='BTC_BEAR'?-7:0);
+    tryPush('LONG','TREND_PULLBACK',base,[`EMA20>EMA50`, `Giá trên VWAP`, `RSI ${fmt(r,1)}`, `ADX ${fmt(a,1)}`, nearEma?'Pullback gần EMA20':'Pullback gần VWAP']);
+  }
+  if (ema20<ema50 && close<vwapv && r>=30 && r<=57 && a>=18 && (nearEma || nearVwap)) {
+    let base = 44 + Math.min(18,a/3) + (hist<=histPrev?8:0) + (quality>=58?8:0) + (market.type==='BTC_BEAR'?8:market.type==='BTC_BULL'?-7:0);
+    tryPush('SHORT','TREND_PULLBACK',base,[`EMA20<EMA50`, `Giá dưới VWAP`, `RSI ${fmt(r,1)}`, `ADX ${fmt(a,1)}`, nearEma?'Pullback gần EMA20':'Pullback gần VWAP']);
+  }
+  if (close > high20 && volSpike >= 1.12 && a >= 20 && e.ema20[i] >= e.ema50[i]) {
+    let base = 42 + Math.min(16,a/3) + Math.min(14,(volSpike-1)*18) + (market.type==='BTC_BULL'?7:0);
+    tryPush('LONG','BREAKOUT_CONTINUATION',base,[`Break high20`, `Volume spike ${fmt(volSpike,2)}x`, `ADX ${fmt(a,1)}`]);
+  }
+  if (close < low20 && volSpike >= 1.12 && a >= 20 && e.ema20[i] <= e.ema50[i]) {
+    let base = 42 + Math.min(16,a/3) + Math.min(14,(volSpike-1)*18) + (market.type==='BTC_BEAR'?7:0);
+    tryPush('SHORT','BREAKOUT_CONTINUATION',base,[`Break low20`, `Volume spike ${fmt(volSpike,2)}x`, `ADX ${fmt(a,1)}`]);
+  }
+  const sweptLow = last.low < low20 && close > low20 && close > last.open && volSpike >= 1.05;
+  const sweptHigh = last.high > high20 && close < high20 && close < last.open && volSpike >= 1.05;
+  if (sweptLow && r < 55) {
+    let base = 40 + (quality>=60?10:0) + Math.min(10,(volSpike-1)*16) + (market.type!=='BTC_BEAR'?5:-4);
+    tryPush('LONG','REVERSAL_SWEEP',base,[`Sweep đáy 20 nến`, `Đóng rút chân`, `Volume ${fmt(volSpike,2)}x`]);
+  }
+  if (sweptHigh && r > 45) {
+    let base = 40 + (quality>=60?10:0) + Math.min(10,(volSpike-1)*16) + (market.type!=='BTC_BULL'?5:-4);
+    tryPush('SHORT','REVERSAL_SWEEP',base,[`Sweep đỉnh 20 nến`, `Đóng rút râu`, `Volume ${fmt(volSpike,2)}x`]);
+  }
+  const rangeMarket = a < 22 && bbw < 2.5 && rangePct < 3.2;
+  if (rangeMarket && close <= low20 + (high20-low20)*.25 && r<47) {
+    tryPush('LONG','RANGE_SCALP',44 + (47-r) + (quality>55?6:0),[`Range ADX thấp`, `Giá gần biên dưới`, `RSI ${fmt(r,1)}`]);
+  }
+  if (rangeMarket && close >= low20 + (high20-low20)*.75 && r>53) {
+    tryPush('SHORT','RANGE_SCALP',44 + (r-53) + (quality>55?6:0),[`Range ADX thấp`, `Giá gần biên trên`, `RSI ${fmt(r,1)}`]);
+  }
+  return out;
+}
+
+function buildPlan(ctx){
+  const {symbol,side,playbook,base,reasons,market,e,i,last,prev,atrPct,quality,high20,low20,volSpike,c}=ctx;
+  const atrv=e.atr[i], close=last.close;
+  if (!Number.isFinite(atrv) || atrv <= 0 || close <= 0) return null;
+  const swingLow=Math.min(...c.slice(Math.max(0,i-8),i+1).map(x=>x.low));
+  const swingHigh=Math.max(...c.slice(Math.max(0,i-8),i+1).map(x=>x.high));
+  let entry, sl, tp1R, tp2R, entryStyle='HYBRID';
+  const spread = Math.max(atrv*.08, close*.00025);
+  if (side==='LONG'){
+    if (playbook==='TREND_PULLBACK') entry = Math.min(close, Math.max(e.ema20[i], e.vwap[i]) + atrv*.08);
+    else if (playbook==='BREAKOUT_CONTINUATION') entry = close + spread;
+    else if (playbook==='REVERSAL_SWEEP') entry = close - atrv*.06;
+    else entry = close;
+    sl = Math.min(swingLow - atrv*.12, entry - atrv*.55);
+  } else {
+    if (playbook==='TREND_PULLBACK') entry = Math.max(close, Math.min(e.ema20[i], e.vwap[i]) - atrv*.08);
+    else if (playbook==='BREAKOUT_CONTINUATION') entry = close - spread;
+    else if (playbook==='REVERSAL_SWEEP') entry = close + atrv*.06;
+    else entry = close;
+    sl = Math.max(swingHigh + atrv*.12, entry + atrv*.55);
+  }
+  const risk = Math.abs(entry-sl);
+  if (!Number.isFinite(risk) || risk/entry*100 < .12 || risk/entry*100 > 2.4) return null;
+  if (playbook==='RANGE_SCALP') { tp1R=.62; tp2R=1.05; }
+  else if (playbook==='REVERSAL_SWEEP') { tp1R=.72; tp2R=1.15; }
+  else if (playbook==='BREAKOUT_CONTINUATION') { tp1R=.82; tp2R=1.45; }
+  else { tp1R=.78; tp2R=1.35; }
+  const follow = followThroughScore({side,playbook,e,i,market,quality,volSpike,atrPct});
+  const tp2Enabled = follow >= 58 && playbook !== 'RANGE_SCALP';
+  const tp1 = side==='LONG' ? entry + risk*tp1R : entry - risk*tp1R;
+  const tp2 = tp2Enabled ? (side==='LONG' ? entry + risk*tp2R : entry - risk*tp2R) : null;
+  const probs = estimateProbabilities({symbol,side,playbook,market,base,follow,quality,atrPct,entry,close,risk});
+  const ev = expectedR(probs,tp1R,tp2Enabled?tp2R:0);
+  const edgeScore = clamp(base*.35 + probs.tp1*.42 + probs.entryFill*.12 + Math.max(0,ev)*18 - probs.slBeforeTp1*.16 - probs.expired*.10,0,100);
+  const grade = edgeScore>=82?'A+':edgeScore>=72?'A':edgeScore>=62?'B+':edgeScore>=52?'B':edgeScore>=42?'C':'D';
+  const bucket = decideBucket({probs,ev,edgeScore,grade,raw:base});
+  const planKey = [symbol,side,playbook,Math.round(entry*1e8),Math.round(sl*1e8),Math.round((tp2||tp1)*1e8)].join('_');
+  const signalTime = last.closeTime || Date.now();
+  const id = `${symbol}_${getCfg().interval}_${side}_${playbook}_${Math.floor(signalTime/60000)}_${hash(planKey)}`;
+  const riskPct = risk/entry*100;
+  return {
+    id, planKey, symbol, interval:getCfg().interval, trackInterval:getCfg().trackInterval, side, playbook,
+    bucket, status: bucket==='RAW_ONLY'?'RAW_ONLY':'WAIT_ENTRY', result:null, grade,
+    signalTime, createdAt:new Date().toISOString(), lastCheckedAt:null, closeTime:null,
+    entry, sl, tp1, tp2, tp2Enabled, tp1R, tp2R:tp2Enabled?tp2R:0, rr:tp2Enabled?tp2R:tp1R,
+    signalPrice: close, score: Math.round(base), edgeScore: Math.round(edgeScore), ev:+ev.toFixed(3),
+    entryFillProb:Math.round(probs.entryFill), tp1Prob:Math.round(probs.tp1), tp2Prob:Math.round(probs.tp2),
+    slRisk:Math.round(probs.slBeforeTp1), expiredRisk:Math.round(probs.expired), followScore:Math.round(follow),
+    adx:e.adx[i], rsi:e.rsi[i], atrPct, vwap:e.vwap[i], ema20:e.ema20[i], ema50:e.ema50[i], stability:quality, quoteVolume:last.quoteVolume,
+    marketRegime:market.type, marketTrend:market.trend, reasons:[...reasons, `Follow ${Math.round(follow)}/100`, `EV ${ev.toFixed(2)}R`, `Bucket ${bucket}`],
+    notes:[], entryHitTime:null, tp1HitTime:null, tp2HitTime:null, slHitTime:null, mfe:0, mae:0,
+    learningKey: learningKeys({symbol,side,playbook,market}).exact,
+    duplicateState:'NEW'
+  };
+}
+function followThroughScore({side,playbook,e,i,market,quality,volSpike,atrPct}){
+  let s = 40;
+  s += Math.min(18, e.adx[i]/2.4);
+  if (side==='LONG' && e.macd.hist[i] >= e.macd.hist[i-1]) s += 8;
+  if (side==='SHORT' && e.macd.hist[i] <= e.macd.hist[i-1]) s += 8;
+  if (quality >= 65) s += 8; else if (quality < 52) s -= 6;
+  if (volSpike >= 1.15) s += 8;
+  if ((side==='LONG' && market.type==='BTC_BULL') || (side==='SHORT' && market.type==='BTC_BEAR')) s += 8;
+  if ((side==='LONG' && market.type==='BTC_BEAR') || (side==='SHORT' && market.type==='BTC_BULL')) s -= 12;
+  if (playbook==='RANGE_SCALP') s -= 6;
+  if (atrPct < .25) s -= 7;
+  if (atrPct > 2.2) s -= 8;
+  return clamp(s,0,100);
+}
+function learningKeys({symbol,side,playbook,market}){
+  const regime = market?.type || 'UNKNOWN';
+  return {
+    exact:`${symbol}|${side}|${playbook}|${regime}`,
+    playbook:`${side}|${playbook}|${regime}`,
+    symbol:`${symbol}|${side}`,
+    side:`${side}|${regime}`
+  };
+}
+function computeLearning(){
+  const stats = new Map();
+  const add = (key,s) => {
+    if (!key) return;
+    if (!stats.has(key)) stats.set(key,{key,n:0,tp1:0,tp2:0,loss:0,weak:0,noEntry:0,expired:0,evSum:0,entryFill:0});
+    const x=stats.get(key); x.n++;
+    if (s.entryHitTime) x.entryFill++;
+    if (isTp1(s)) x.tp1++;
+    if (isTp2(s)) x.tp2++;
+    if (isLoss(s)) x.loss++;
+    if (isWeak(s)) x.weak++;
+    if (resultKind(s)==='NO_ENTRY') x.noEntry++;
+    if (String(s.status||s.result||'').includes('EXPIRED')) x.expired++;
+    x.evSum += Number.isFinite(+s.ev) ? +s.ev : 0;
+  };
+  for (const s of state.signals) {
+    if (!statusClosed(s)) continue;
+    const mk={type:s.marketRegime||'UNKNOWN'};
+    const keys=learningKeys({symbol:s.symbol,side:s.side,playbook:s.playbook,market:mk});
+    Object.values(keys).forEach(k=>add(k,s));
+  }
+  return stats;
+}
+function bayes(rateN, total, prior=50, strength=8){ return (rateN + prior/100*strength)/(total+strength)*100; }
+function estimateProbabilities({symbol,side,playbook,market,base,follow,quality,atrPct,entry,close,risk}){
+  const stats=computeLearning(), keys=learningKeys({symbol,side,playbook,market});
+  const mix=[keys.exact,keys.playbook,keys.symbol,keys.side].map((k,idx)=>({s:stats.get(k),w:[.44,.28,.18,.10][idx]})).filter(x=>x.s);
+  const weighted = (fn, prior) => {
+    if (!mix.length) return prior;
+    let sw=0, val=0;
+    for (const {s,w} of mix){ const wt=w*Math.min(1, s.n/12); sw+=wt; val+=fn(s)*wt; }
+    return sw ? val/sw : prior;
+  };
+  const priorEntry = clamp(56 + (100-Math.abs(entry-close)/close*100*75)*.08 + (playbook==='BREAKOUT_CONTINUATION'?-5:5), 25, 85);
+  const priorTp1 = clamp(33 + base*.32 + follow*.23 + (quality-55)*.22 - Math.max(0,atrPct-1.3)*6, 18, 78);
+  const priorTp2 = clamp(priorTp1*.42 + follow*.18 + (playbook==='BREAKOUT_CONTINUATION'?8:0) - (playbook==='RANGE_SCALP'?13:0), 8, 58);
+  const priorLoss = clamp(46 - base*.14 - follow*.12 + Math.max(0,atrPct-1.6)*10, 15, 65);
+  const priorExpired = clamp(34 - follow*.18 + (playbook==='TREND_PULLBACK'?3:0), 8, 55);
+  const entryFill = weighted(s=>bayes(s.entryFill,s.n,priorEntry,8), priorEntry);
+  const tp1 = weighted(s=>bayes(s.tp1,s.n,priorTp1,10), priorTp1);
+  const tp2 = weighted(s=>bayes(s.tp2,s.n,priorTp2,10), priorTp2);
+  const slBeforeTp1 = weighted(s=>bayes(s.loss,s.n,priorLoss,8), priorLoss);
+  const expired = weighted(s=>bayes(s.expired,s.n,priorExpired,8), priorExpired);
+  return {entryFill:clamp(entryFill,3,95), tp1:clamp(tp1,2,92), tp2:clamp(tp2,1,80), slBeforeTp1:clamp(slBeforeTp1,2,90), expired:clamp(expired,2,90)};
+}
+function expectedR(p,tp1R,tp2R){
+  const p1=p.tp1/100, p2=p.tp2/100, pl=p.slBeforeTp1/100, pe=p.expired/100;
+  return (p1-p2)*tp1R + p2*(tp2R||tp1R) - pl*1 - pe*.18 - .045;
+}
+function decideBucket({probs,ev,edgeScore,grade,raw}){
+  const cfg=getCfg();
+  if (raw < cfg.minRaw) return 'RAW_ONLY';
+  if (probs.tp1 >= cfg.tradeTp1 && ev > .04 && edgeScore >= 70 && probs.slBeforeTp1 <= 45) return 'TRADE_READY';
+  if (probs.tp1 >= cfg.forwardTp1 && probs.entryFill >= 40 && ev > -.12 && edgeScore >= 52) return 'FORWARD_TEST';
+  return 'SHADOW_TEST';
+}
+function hash(str){ let h=2166136261; for(let i=0;i<str.length;i++){h^=str.charCodeAt(i); h=Math.imul(h,16777619);} return (h>>>0).toString(36).toUpperCase(); }
+
+function mergeSignals(newSignals){
+  const map = new Map(state.signals.map(s=>[s.id,s]));
+  const active = state.signals.filter(statusOpen);
+  let added=0, dup=0;
+  for (const s of newSignals) {
+    const dupe = findDuplicate(s, active);
+    if (dupe) {
+      s.duplicateState = `DUP_OF_${dupe.id}`;
+      dup++;
+      if (s.bucket === 'TRADE_READY') s.bucket = 'FORWARD_TEST';
+      s.reasons.push('Duplicate mềm: hạ 1 cấp, vẫn giữ raw để học.');
+    }
+    if (s.bucket !== 'RAW_ONLY' && !map.has(s.id)) { map.set(s.id,s); added++; }
+  }
+  state.signals = Array.from(map.values()).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1200);
+  saveJSON(STORE,state.signals);
+  return {added,dup};
+}
+function findDuplicate(s, active){
+  const cfg=getCfg(), cooldown=(cfg.expireHours||5)*3600000;
+  return active.find(x => x.symbol===s.symbol && x.side===s.side && x.playbook===s.playbook && Math.abs((x.entry-s.entry)/s.entry)*100 < .22 && Math.abs((s.signalTime||0)-(x.signalTime||0)) < cooldown);
+}
+
+async function scan(){
+  try{
+    const cfg=getCfg(); setProgress(0); setStatus('Đang lấy BTC regime và universe...');
+    const btc = await getKlines('BTCUSDT','1h',160);
+    state.market = marketRegimeFrom(btc);
+    const symbols = await getUniverse();
+    const found=[]; let done=0;
+    setStatus(`Scan ${symbols.length} symbols ${cfg.interval}. BTC regime: ${state.market.type} · ADX ${fmt(state.market.adx,1)}.`);
+    const concurrency = 5; let idx=0;
+    async function worker(){
+      while(idx < symbols.length){
+        const symbol = symbols[idx++];
+        try{
+          const c = await getKlines(symbol,cfg.interval,220);
+          const rows = detectCandidates(symbol,c,state.market);
+          found.push(...rows);
+        }catch(e){ console.warn(symbol,e.message); }
+        done++; setProgress(done/symbols.length*100);
+        if (done % 4 === 0) { state.raw = found.slice().sort((a,b)=>b.edgeScore-a.edgeScore).slice(0,500); saveJSON(RAW_STORE,state.raw); render(); }
+      }
+    }
+    await Promise.all(Array.from({length:Math.min(concurrency,symbols.length)},worker));
+    state.raw = found.sort((a,b)=>b.edgeScore-a.edgeScore).slice(0,800);
+    saveJSON(RAW_STORE,state.raw);
+    const {added,dup} = mergeSignals(state.raw);
+    render();
+    setStatus(`Scan xong: ${state.raw.length} raw signals. Auto add ${added} vào Shadow/Forward/Trade. Duplicate mềm: ${dup}.`);
+    setProgress(100);
+    await syncToSupabaseIfReady();
+  }catch(e){ setStatus('Scan lỗi: '+e.message); setProgress(0); }
+}
+
+async function trackAll(){
+  const list = state.signals.filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY');
+  if (!list.length) return setStatus('Không có signal active để track.');
+  setStatus(`Đang forward-track ${list.length} signal bằng nến ${getCfg().trackInterval}...`);
+  let done=0;
+  for (const s of list){
+    try{ await trackOne(s); }catch(e){ s.notes = [...(s.notes||[]), `Track error: ${e.message}`]; }
+    done++; setProgress(done/list.length*100);
+    if (done % 5 === 0) { saveJSON(STORE,state.signals); render(); }
+  }
+  saveJSON(STORE,state.signals);
+  render();
+  setStatus(`Track xong ${list.length} signal. Learning stats đã cập nhật theo outcome mới.`);
+  await syncToSupabaseIfReady();
+}
+async function trackOne(s){
+  const start = Math.max((s.signalTime||Date.now()) - 2*60000, Date.now() - 1000*60*60*24*5);
+  const candles = await getKlines(s.symbol, s.trackInterval || getCfg().trackInterval, 1000, start);
+  if (!candles.length) return;
+  const expiry = (s.signalTime||Date.now()) + (s.expireHours || getCfg().expireHours)*3600000;
+  let entered=!!s.entryHitTime, tp1=!!s.tp1HitTime, closed=statusClosed(s);
+  let mfe=s.mfe||0, mae=s.mae||0;
+  for (const k of candles){
+    if ((k.closeTime||k.openTime) < (s.signalTime||0)) continue;
+    const t=k.closeTime || k.openTime;
+    if (closed) break;
+    if (!entered){
+      if (touch(k,s.entry)) {
+        entered=true; s.entryHitTime=t; s.status='ENTRY_FILLED'; s.notes=[...(s.notes||[]),`Entry hit ${new Date(t).toLocaleString('vi-VN')}`];
+      } else if (t > expiry) {
+        s.status='EXPIRED_NO_ENTRY'; s.result='EXPIRED_NO_ENTRY'; s.closeTime=t; closed=true; break;
+      } else {
+        s.status='WAIT_ENTRY';
+        continue;
+      }
+    }
+    if (entered){
+      const moveFav = s.side==='LONG' ? (k.high-s.entry)/(Math.abs(s.entry-s.sl))*100 : (s.entry-k.low)/(Math.abs(s.entry-s.sl))*100;
+      const moveAdv = s.side==='LONG' ? (s.entry-k.low)/(Math.abs(s.entry-s.sl))*100 : (k.high-s.entry)/(Math.abs(s.entry-s.sl))*100;
+      mfe=Math.max(mfe,moveFav); mae=Math.max(mae,moveAdv);
+      const hitSL = touch(k,s.sl), hitTP1=touch(k,s.tp1), hitTP2=s.tp2Enabled && s.tp2 && touch(k,s.tp2);
+      // Conservative ambiguity handling: if SL and TP target appear in same 1m candle before TP1, count SL first.
+      if (!tp1 && hitSL && hitTP1) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; s.notes=[...(s.notes||[]),'1m ambiguity: SL & TP1 cùng nến, tính conservative = LOSS']; closed=true; break; }
+      if (!tp1 && hitSL) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; closed=true; break; }
+      if (!tp1 && hitTP1) { tp1=true; s.tp1HitTime=t; s.status='TP1_HIT'; s.result='TP1_HIT_TRACKING_TP2_OR_SL'; s.notes=[...(s.notes||[]),`TP1 hit ${new Date(t).toLocaleString('vi-VN')}`]; }
+      if (tp1 && hitTP2) { s.status='TP2_WIN'; s.result='TP2_WIN'; s.tp2HitTime=t; s.closeTime=t; closed=true; break; }
+      if (tp1 && hitSL) { s.status='TP1_ONLY'; s.result='TP1_THEN_SL'; s.slHitTime=t; s.closeTime=t; closed=true; break; }
+      if (t > expiry && !tp1) { s.status='EXPIRED_AFTER_ENTRY_NO_TP1'; s.result='EXPIRED_AFTER_ENTRY_NO_TP1'; s.closeTime=t; closed=true; break; }
+      if (t > expiry && tp1) { s.status='EXPIRED_AFTER_TP1_NO_TP2'; s.result='EXPIRED_AFTER_TP1_NO_TP2'; s.closeTime=t; closed=true; break; }
+    }
+  }
+  s.mfe=+mfe.toFixed(2); s.mae=+mae.toFixed(2); s.lastCheckedAt=new Date().toISOString();
+}
+function touch(k, price){ return price != null && k.low <= price && k.high >= price; }
+
+function currentRows(){
+  const q=$('search').value.trim().toUpperCase(), tab=state.activeTab;
+  let rows = tab==='raw' ? state.raw : state.signals;
+  if (tab==='shadow') rows = rows.filter(s=>s.bucket==='SHADOW_TEST');
+  if (tab==='forward') rows = rows.filter(s=>s.bucket==='FORWARD_TEST');
+  if (tab==='trade') rows = rows.filter(s=>s.bucket==='TRADE_READY');
+  if (tab==='active') rows = rows.filter(statusOpen);
+  if (tab==='closed') rows = rows.filter(statusClosed);
+  if (q) rows = rows.filter(s => [s.symbol,s.side,s.playbook,s.status,s.bucket,s.marketRegime].some(v=>String(v||'').toUpperCase().includes(q)));
+  const sort=$('sortBy').value;
+  return rows.slice().sort((a,b)=>{
+    if (sort==='tp1') return (b.tp1Prob||0)-(a.tp1Prob||0);
+    if (sort==='time') return (b.signalTime||0)-(a.signalTime||0);
+    if (sort==='ev') return (b.ev||0)-(a.ev||0);
+    return (b.edgeScore||0)-(a.edgeScore||0);
+  });
+}
+function render(){
+  renderMetrics();
+  if (state.activeTab==='learning') return renderLearning();
+  if (state.activeTab==='debug') return renderDebug();
+  $('learningView').classList.add('hide'); $('debugView').classList.add('hide'); $('tableView').classList.remove('hide');
+  const rows=currentRows();
+  $('tableView').innerHTML = `<table><thead><tr>
+    <th>Signal</th><th>Bucket / Status</th><th>Playbook</th><th>Prices</th><th>Probabilities</th><th>Edge</th><th>Market</th><th>Reasons</th><th>Times</th>
+  </tr></thead><tbody>${rows.map(rowHTML).join('') || `<tr><td colspan="9" class="muted">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
+}
+function rowHTML(s){
+  return `<tr>
+    <td><a class="symbol" href="${binanceUrl(s.symbol)}" target="_blank" rel="noopener">${s.symbol||'-'}</a><br>
+      <span class="tag ${s.side==='LONG'?'long':'short'}">${s.side||'-'}</span>
+      <div class="mono">${s.id||'-'}</div></td>
+    <td>${bucketTag(s.bucket)}<br><span class="tag ${statusClass(s)}" style="margin-top:5px">${s.status||'-'}</span><br><span class="pill">${s.grade||'-'}</span></td>
+    <td><b>${s.playbook||'-'}</b><br><span class="muted">Dup: ${s.duplicateState||'OK'}</span></td>
+    <td>Entry <b>${fmt(s.entry,8)}</b><br>SL <b class="bad">${fmt(s.sl,8)}</b><br>TP1 <b class="good">${fmt(s.tp1,8)}</b><br>TP2 <b class="${s.tp2Enabled?'good':'muted'}">${s.tp2Enabled?fmt(s.tp2,8):'OFF'}</b></td>
+    <td>Entry Fill <b>${pct(s.entryFillProb)}</b><br>TP1 before SL <b>${pct(s.tp1Prob)}</b><br>TP2 <b>${pct(s.tp2Prob)}</b><br>SL Risk <b class="${(s.slRisk||0)>48?'bad':'muted'}">${pct(s.slRisk)}</b><br>Expired <b>${pct(s.expiredRisk)}</b></td>
+    <td><span class="score ${scoreClass(s.edgeScore)}">${s.edgeScore||0}</span><br>Raw ${s.score||0}<br>EV <b class="${(s.ev||0)>0?'good':'warn'}">${fmt(s.ev,2)}R</b><br>MFE/MAE ${fmt(s.mfe,1)} / ${fmt(s.mae,1)}</td>
+    <td>${s.marketRegime||'-'}<br>ADX ${fmt(s.adx,1)}<br>RSI ${fmt(s.rsi,1)}<br>ATR ${fmt(s.atrPct,2)}%</td>
+    <td>${(s.reasons||[]).slice(0,7).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('')}</td>
+    <td>Signal ${dateFmt(s.signalTime)}<br>Entry ${dateFmt(s.entryHitTime)}<br>TP1 ${dateFmt(s.tp1HitTime)}<br>Close ${dateFmt(s.closeTime)}</td>
+  </tr>`;
+}
+function bucketTag(b){
+  if (b==='TRADE_READY') return `<span class="tag tradeTag">TRADE READY</span>`;
+  if (b==='FORWARD_TEST') return `<span class="tag forwardTag">FORWARD TEST</span>`;
+  if (b==='SHADOW_TEST') return `<span class="tag shadowTag">SHADOW TEST</span>`;
+  return `<span class="tag rawTag">RAW ONLY</span>`;
+}
+function statusClass(s){
+  if (isTp2(s)) return 'tradeTag';
+  if (isTp1(s)) return 'forwardTag';
+  if (isLoss(s)) return 'lossTag';
+  if (isWeak(s) || String(s.status).includes('EXPIRED')) return 'warnTag';
+  return 'rawTag';
+}
+function scoreClass(v){ return v>=72?'good':v>=55?'warn':'bad'; }
+function dateFmt(t){ return t ? new Date(t).toLocaleString('vi-VN') : '-'; }
+function escapeHTML(str){ return String(str).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+function renderMetrics(){
+  const sig=state.signals, closed=sig.filter(statusClosed), evs=closed.map(s=>+s.ev).filter(Number.isFinite);
+  $('mRaw').textContent=state.raw.length;
+  $('mShadow').textContent=sig.filter(s=>s.bucket==='SHADOW_TEST' && statusOpen(s)).length;
+  $('mForward').textContent=sig.filter(s=>s.bucket==='FORWARD_TEST' && statusOpen(s)).length;
+  $('mTrade').textContent=sig.filter(s=>s.bucket==='TRADE_READY' && statusOpen(s)).length;
+  $('mWin').textContent=`${sig.filter(isTp2).length} / ${sig.filter(s=>isTp1(s)&&!isTp2(s)).length}`;
+  $('mLoss').textContent=`${sig.filter(isLoss).length} / ${sig.filter(isWeak).length}`;
+  $('mTp1Rate').textContent=closed.length ? pct(sig.filter(isTp1).length/closed.length*100,1) : '0%';
+  $('mEv').textContent=Number.isFinite(mean(evs)) ? `${mean(evs).toFixed(2)}R` : '0R';
+}
+function renderLearning(){
+  $('tableView').classList.add('hide'); $('debugView').classList.add('hide'); $('learningView').classList.remove('hide');
+  const stats=Array.from(computeLearning().values()).filter(x=>x.n>=1).sort((a,b)=>b.n-a.n).slice(0,120);
+  $('learningView').innerHTML = `<div class="learning-grid">${stats.map(s=>{
+    const tp1=bayes(s.tp1,s.n,50,6), tp2=bayes(s.tp2,s.n,20,6), loss=bayes(s.loss,s.n,35,6);
+    return `<div class="learn-card"><b>${escapeHTML(s.key)}</b><div class="meta">
+      Samples: ${s.n}<br>TP1 rate: <span class="${tp1>=55?'good':'warn'}">${tp1.toFixed(1)}%</span> · TP2: ${tp2.toFixed(1)}% · Loss: <span class="${loss>45?'bad':'muted'}">${loss.toFixed(1)}%</span><br>
+      Entry fill: ${bayes(s.entryFill,s.n,55,6).toFixed(1)}% · Weak: ${s.weak} · No entry: ${s.noEntry}
+    </div></div>`;
+  }).join('') || '<div class="muted">Chưa có closed outcome để học.</div>'}</div>`;
+}
+function renderDebug(){
+  $('tableView').classList.add('hide'); $('learningView').classList.add('hide'); $('debugView').classList.remove('hide');
+  $('debugView').innerHTML = `<pre style="white-space:pre-wrap;color:var(--muted);font-size:12px;background:#0b1220;border:1px solid var(--border);border-radius:14px;padding:12px;overflow:auto">${escapeHTML(JSON.stringify({cfg:getCfg(), market:state.market, raw:state.raw.length, signals:state.signals.length, active:state.signals.filter(statusOpen).length},null,2))}</pre>`;
+}
+
+function exportJSON(){
+  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals},null,2)], {type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`fta-v6-edge-lab-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
+}
+async function importJSON(file){
+  const txt=await file.text(); const data=JSON.parse(txt);
+  if (Array.isArray(data)) state.signals=data;
+  else { if (Array.isArray(data.raw)) state.raw=data.raw; if (Array.isArray(data.signals)) state.signals=data.signals; if (data.cfg) applyCfg(data.cfg); }
+  saveJSON(RAW_STORE,state.raw); saveJSON(STORE,state.signals); saveCfg(); render(); setStatus('Import JSON xong.');
+}
+
+function supaSettings(){ return loadJSON(SUPA_STORE, {}); }
+function saveSupaSettings(){
+  const cfg={url:$('supaUrl').value.trim(), key:$('supaKey').value.trim(), email:$('supaEmail').value.trim()};
+  saveJSON(SUPA_STORE,cfg); return cfg;
+}
+function initSupabase(){
+  const cfg=saveSupaSettings();
+  if (!cfg.url || !cfg.key || !window.supabase) return null;
+  state.supabaseClient = window.supabase.createClient(cfg.url,cfg.key);
+  state.supabaseClient.auth.onAuthStateChange((_e,session)=>state.supabaseSession=session);
+  return state.supabaseClient;
+}
+function mapSignalToRow(s){
+  return {id:s.id, symbol:s.symbol, side:s.side, status:s.status, interval:s.interval, score:s.edgeScore||s.score, signal_time:new Date(s.signalTime||Date.now()).toISOString(), updated_at:new Date().toISOString(), payload:{...s,__cloudUpdatedAt:new Date().toISOString()}};
+}
+function rowToSignal(row){ return row.payload ? {...row.payload,__cloudUpdatedAt:row.updated_at} : row; }
+async function signInSupabase(){
+  const c=state.supabaseClient || initSupabase();
+  if(!c) return setStatus('Thiếu Supabase URL/key.');
+  const {data,error}=await c.auth.signInWithPassword({email:$('supaEmail').value.trim(), password:$('supaPass').value});
+  if(error) return setStatus('Login Supabase lỗi: '+error.message);
+  state.supabaseSession=data.session; setStatus(`Login Supabase thành công: ${data.user.email}. Đang pull cloud...`); await pullSupabase();
+}
+async function syncToSupabaseIfReady(){
+  if (!state.supabaseClient || !state.supabaseSession || state.cloudBusy) return;
+  await pushSupabase(false);
+}
+async function pushSupabase(show=true){
+  const c=state.supabaseClient || initSupabase();
+  if(!c || !state.supabaseSession) { if(show) setStatus('Chưa login Supabase.'); return; }
+  state.cloudBusy=true;
+  try{
+    const rows=state.signals.slice(0,1000).map(mapSignalToRow);
+    const {error}=await c.from('signals').upsert(rows,{onConflict:'id'});
+    if(error) throw error;
+    if(show) setStatus(`Push cloud xong: ${rows.length} signals.`);
+  }catch(e){ if(show) setStatus('Push cloud lỗi: '+e.message); console.warn(e); }
+  finally{state.cloudBusy=false;}
+}
+async function pullSupabase(){
+  const c=state.supabaseClient || initSupabase();
+  if(!c || !state.supabaseSession) return setStatus('Chưa login Supabase.');
+  const {data,error}=await c.from('signals').select('id, updated_at, payload').order('signal_time',{ascending:false}).limit(1000);
+  if(error) return setStatus('Pull Supabase lỗi: '+error.message);
+  const map=new Map(state.signals.map(s=>[s.id,s]));
+  for(const row of data||[]){
+    const cloud=rowToSignal(row), local=map.get(cloud.id);
+    const ct=Date.parse(cloud.__cloudUpdatedAt || row.updated_at || 0), lt=Date.parse(local?.__cloudUpdatedAt || local?.lastCheckedAt || local?.createdAt || 0);
+    if(!local || ct>=lt) map.set(cloud.id,cloud);
+  }
+  state.signals=Array.from(map.values()).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1200);
+  saveJSON(STORE,state.signals); render(); setStatus(`Pull cloud xong: ${data?.length||0} dòng, local hiện có ${state.signals.length}.`);
+}
+
+function startAuto(){
+  if(state.autoTimer){ clearInterval(state.autoTimer); state.autoTimer=null; $('autoBtn').textContent='Auto: OFF'; setStatus('Đã tắt Auto.'); return; }
+  state.autoTimer=setInterval(async()=>{ await scan(); await trackAll(); }, Math.max(120000, (+$('scanSec')||300)*1000));
+  $('autoBtn').textContent='Auto: ON'; setStatus('Đã bật Auto: mỗi chu kỳ sẽ Scan + Track + Sync nếu đã login Supabase.');
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  applyCfg(state.cfg);
+  const sup=supaSettings(); if(sup.url) $('supaUrl').value=sup.url; if(sup.key) $('supaKey').value=sup.key; if(sup.email) $('supaEmail').value=sup.email;
+  $('scanBtn').onclick=scan; $('trackBtn').onclick=trackAll; $('autoBtn').onclick=startAuto; $('exportBtn').onclick=exportJSON;
+  $('importBtn').onclick=()=>$('importFile').click(); $('importFile').onchange=e=>e.target.files[0]&&importJSON(e.target.files[0]);
+  $('saveCfg').onclick=saveCfg; $('resetCfg').onclick=()=>applyPreset($('preset').value); $('preset').onchange=e=>applyPreset(e.target.value);
+  $('supaLogin').onclick=signInSupabase; $('supaPush').onclick=()=>pushSupabase(true); $('supaPull').onclick=pullSupabase;
+  $('clearRaw').onclick=()=>{state.raw=[];saveJSON(RAW_STORE,[]);render();};
+  $('clearClosed').onclick=()=>{state.signals=state.signals.filter(s=>!statusClosed(s));saveJSON(STORE,state.signals);render();};
+  $('clearAll').onclick=()=>{ if(confirm('Xóa toàn bộ local raw + signals?')){state.raw=[];state.signals=[];saveJSON(RAW_STORE,[]);saveJSON(STORE,[]);render();}};
+  $('search').oninput=render; $('sortBy').onchange=render;
+  $('tabs').onclick=e=>{ if(e.target.matches('button[data-tab]')){ [...$('tabs').querySelectorAll('button')].forEach(b=>b.classList.remove('active')); e.target.classList.add('active'); state.activeTab=e.target.dataset.tab; render(); }};
+  initSupabase();
+  render();
+});
+</script>
+</body>
+</html>
