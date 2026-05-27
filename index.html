@@ -18,7 +18,7 @@
     header{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
     h1{margin:0 0 6px;font-size:clamp(22px,2vw,34px);letter-spacing:-.04em}
     .sub{max-width:1100px;color:var(--muted);line-height:1.45;font-size:14px}
-    .top-actions{display:grid;grid-template-columns:repeat(5,minmax(135px,1fr));gap:8px;min-width:min(860px,100%)}
+    .top-actions{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:8px;min-width:min(980px,100%)}
     .sticky{position:sticky;top:0;z-index:30;background:rgba(7,10,18,.94);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:18px;padding:10px;margin-bottom:12px;box-shadow:var(--shadow)}
     .status{min-height:43px;border:1px solid var(--border);border-radius:14px;padding:10px 12px;background:#0b1220;color:var(--muted);font-size:13px;line-height:1.4}
     .layout{display:grid;grid-template-columns:clamp(310px,20vw,390px) minmax(0,1fr);gap:12px}
@@ -96,6 +96,7 @@
     <div class="top-actions">
       <button id="scanBtn">Scan + Auto Add</button>
       <button id="trackBtn" class="goodbtn">Track 1m Now</button>
+      <button id="repairBtn" class="secondary">Repair Time Order</button>
       <button id="autoBtn" class="secondary">Auto: OFF</button>
       <button id="exportBtn" class="secondary">Export JSON</button>
       <button id="importBtn" class="secondary">Import JSON</button>
@@ -938,12 +939,15 @@ async function signInSupabase(){
   state.supabaseSession=data.session; setStatus(`Login Supabase thành công: ${data.user.email}. Đang pull cloud...`); await pullSupabase();
 }
 async function syncToSupabaseIfReady(){
-  if (!state.supabaseClient || !state.supabaseSession || state.cloudBusy) return;
+  if (!state.supabaseClient || state.cloudBusy) return;
+  const session = await ensureSupaSession();
+  if(!session) return;
   await pushSupabase(false);
 }
 async function pushSupabase(show=true){
   const c=state.supabaseClient || initSupabase();
-  if(!c || !state.supabaseSession) { if(show) setStatus('Chưa login Supabase.'); return; }
+  const session = await ensureSupaSession();
+  if(!c || !session) { if(show) setStatus('Chưa login Supabase. Hãy bấm Login + Pull trước.'); return; }
   state.cloudBusy=true;
   try{
     const rows=state.signals.slice(0,1000).map(mapSignalToRow);
@@ -955,7 +959,9 @@ async function pushSupabase(show=true){
 }
 async function pullSupabase(){
   const c=state.supabaseClient || initSupabase();
-  if(!c || !state.supabaseSession) return setStatus('Chưa login Supabase.');
+  const session = await ensureSupaSession();
+  if(!c || !session) return setStatus('Chưa login Supabase. Hãy nhập URL/key/email/password rồi bấm Login + Pull.');
+  setStatus('Đang Pull Cloud...');
   const {data,error}=await c.from('signals').select('id, updated_at, payload').order('signal_time',{ascending:false}).limit(1000);
   if(error) return setStatus('Pull Supabase lỗi: '+error.message);
   const map=new Map(state.signals.map(s=>[s.id,s]));
@@ -976,17 +982,41 @@ function startAuto(){
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
+  const bindClick = (id, fn) => { const el=$(id); if(el) el.onclick=fn; else console.warn('Missing button:', id); };
+  const bindChange = (id, fn) => { const el=$(id); if(el) el.onchange=fn; else console.warn('Missing input:', id); };
+  const bindInput = (id, fn) => { const el=$(id); if(el) el.oninput=fn; else console.warn('Missing input:', id); };
+
   applyCfg(state.cfg);
-  const sup=supaSettings(); if(sup.url) $('supaUrl').value=sup.url; if(sup.key) $('supaKey').value=sup.key; if(sup.email) $('supaEmail').value=sup.email;
-  $('scanBtn').onclick=scan; $('trackBtn').onclick=trackAll; $('repairBtn').onclick=()=>{ repairAllInvalidTimeOrders(true); render(); }; $('autoBtn').onclick=startAuto; $('exportBtn').onclick=exportJSON;
-  $('importBtn').onclick=()=>$('importFile').click(); $('importFile').onchange=e=>e.target.files[0]&&importJSON(e.target.files[0]);
-  $('saveCfg').onclick=saveCfg; $('resetCfg').onclick=()=>applyPreset($('preset').value); $('preset').onchange=e=>applyPreset(e.target.value);
-  $('supaLogin').onclick=signInSupabase; $('supaPush').onclick=()=>pushSupabase(true); $('supaPull').onclick=pullSupabase;
-  $('clearRaw').onclick=()=>{state.raw=[];saveJSON(RAW_STORE,[]);render();};
-  $('clearClosed').onclick=()=>{state.signals=state.signals.filter(s=>!statusClosed(s));saveJSON(STORE,state.signals);render();};
-  $('clearAll').onclick=()=>{ if(confirm('Xóa toàn bộ local raw + signals?')){state.raw=[];state.signals=[];saveJSON(RAW_STORE,[]);saveJSON(STORE,[]);render();}};
-  $('search').oninput=render; $('sortBy').onchange=render;
-  $('tabs').onclick=e=>{ if(e.target.matches('button[data-tab]')){ [...$('tabs').querySelectorAll('button')].forEach(b=>b.classList.remove('active')); e.target.classList.add('active'); state.activeTab=e.target.dataset.tab; render(); }};
+  const sup=supaSettings();
+  if(sup.url && $('supaUrl')) $('supaUrl').value=sup.url;
+  if(sup.key && $('supaKey')) $('supaKey').value=sup.key;
+  if(sup.email && $('supaEmail')) $('supaEmail').value=sup.email;
+
+  bindClick('scanBtn', scan);
+  bindClick('trackBtn', trackAll);
+  bindClick('repairBtn', ()=>{ repairAllInvalidTimeOrders(true); render(); });
+  bindClick('autoBtn', startAuto);
+  bindClick('exportBtn', exportJSON);
+  bindClick('importBtn', ()=>$('importFile')?.click());
+  bindChange('importFile', e=>e.target.files[0]&&importJSON(e.target.files[0]));
+
+  bindClick('saveCfg', saveCfg);
+  bindClick('resetCfg', ()=>applyPreset($('preset').value));
+  bindChange('preset', e=>applyPreset(e.target.value));
+
+  bindClick('supaLogin', signInSupabase);
+  bindClick('supaPush', ()=>pushSupabase(true));
+  bindClick('supaPull', pullSupabase);
+
+  bindClick('clearRaw', ()=>{state.raw=[];saveJSON(RAW_STORE,[]);render();});
+  bindClick('clearClosed', ()=>{state.signals=state.signals.filter(s=>!statusClosed(s));saveJSON(STORE,state.signals);render();});
+  bindClick('clearAll', ()=>{ if(confirm('Xóa toàn bộ local raw + signals?')){state.raw=[];state.signals=[];saveJSON(RAW_STORE,[]);saveJSON(STORE,[]);render();}});
+
+  bindInput('search', render);
+  bindChange('sortBy', render);
+  const tabs=$('tabs');
+  if(tabs) tabs.onclick=e=>{ if(e.target.matches('button[data-tab]')){ [...tabs.querySelectorAll('button')].forEach(b=>b.classList.remove('active')); e.target.classList.add('active'); state.activeTab=e.target.dataset.tab; render(); }};
+
   initSupabase();
   const fixedOnLoad = repairAllInvalidTimeOrders(false);
   render();
