@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>FTA v6 Edge Lab v6.6 - Actionable Signal Engine</title>
+  <title>FTA v6 Edge Lab v6.8 - Risk Quick Order</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -36,6 +36,8 @@
     button.danger{background:linear-gradient(135deg,#ff496d,#9f1239)}
     button.goodbtn{background:linear-gradient(135deg,#059669,#20d489);color:#06140d}
     button:disabled{opacity:.55;cursor:not-allowed}
+    .copybtn{margin-top:8px;padding:7px 9px;font-size:11px;border-radius:10px;background:linear-gradient(135deg,#059669,#20d489);color:#06140d}
+    .copybtn.disabled{background:#172033;color:#66748c;border:1px solid var(--border);cursor:not-allowed}
     .pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 8px;background:#0b1220;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}
     .tag{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;white-space:nowrap}
     .long{background:rgba(32,212,137,.16);color:var(--good);border:1px solid rgba(32,212,137,.42)}
@@ -86,11 +88,11 @@
 <div class="wrap">
   <header>
     <div>
-      <h1>FTA v6 Edge Lab v6.6</h1>
+      <h1>FTA v6 Edge Lab v6.8</h1>
       <div class="sub">
         Outcome-driven futures assistant: scan rộng để thu thập mẫu, tự đưa tín hiệu vào Shadow/Forward Test,
         học xác suất Entry Fill / TP1 before SL / TP2 / Expired Risk, rồi mới nâng cấp tín hiệu lên Trade Ready.
-        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh.
+        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh. V6.8 bổ sung Risk Quick Order: tự tính qty/margin/leverage theo Capital, Risk %, min order Binance và giới hạn margin/order.
       </div>
     </div>
     <div class="top-actions">
@@ -144,6 +146,27 @@
           <label>Human buffer giây <input id="humanBufferSec" type="number" min="0" max="600" value="120"></label>
           <label>Auto scan giây <input id="scanSec" type="number" min="60" max="1800" value="90"></label>
         </div>
+        <div class="row3">
+          <label>Capital USDT <input id="capitalUSDT" type="number" min="1" step="0.1" value="20"></label>
+          <label>Risk / trade % <input id="riskPct" type="number" min="0.1" max="20" step="0.1" value="2"></label>
+          <label>Max margin/order <input id="maxMarginUSDT" type="number" min="0.1" max="10" step="0.1" value="1"></label>
+        </div>
+        <div class="row3">
+          <label>Min leverage <input id="minLeverage" type="number" min="1" max="125" value="5"></label>
+          <label>Max leverage <input id="maxLeverage" type="number" min="1" max="125" value="125"></label>
+          <label>Order code TTL giây <input id="orderCodeTtlSec" type="number" min="30" max="600" value="120"></label>
+        </div>
+        <div class="row">
+          <label>Preferred leverage list
+            <input id="preferredLeverages" value="5,10,20,25,40,50,75,100,125">
+          </label>
+          <label>Fee/slippage buffer %
+            <input id="feeSlipBufferPct" type="number" min="0" max="2" step="0.01" value="0.08">
+          </label>
+        </div>
+        <label>Risk guard
+          <select id="rejectIfMinOrderExceedsRisk"><option value="ON" selected>ON - bỏ lệnh nếu min order vượt risk</option><option value="OFF">OFF - vẫn copy nhưng cảnh báo</option></select>
+        </label>
         <div class="row">
           <label>Early Signal
             <select id="earlyMode"><option value="ON" selected>ON - dùng nến đang chạy</option><option value="OFF">OFF - chỉ nến đóng</option></select>
@@ -179,7 +202,7 @@
       </div>
 
       <div class="notice">
-        V6.6 thêm Actionability Gate: signal đã chạm Entry trước khi tool phát hiện, hoặc Entry quá sát không đủ thời gian phản ứng, sẽ bị hạ xuống Shadow/Missed và không tính vào Manual Winrate.
+        V6.8 giữ Actionability Gate và thêm Risk Quick Order: chỉ signal Trade Ready còn kịp vào lệnh mới hiện nút Copy Binance Code. Qty/margin/leverage được tính theo Capital, Risk %, min order Binance và max margin/order. Extension chỉ auto-fill form, không tự bấm đặt lệnh.
       </div>
 
       <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
@@ -250,7 +273,7 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab v6.6 - actionable/manual-tradeability engine. Not financial advice. */
+/* FTA v6 Edge Lab v6.8 - actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
@@ -270,7 +293,8 @@ let state = {
   cloudBusy: false,
   pendingCloudSync: false,
   lastCloudError: null,
-  volume24h: {}
+  volume24h: {},
+  symbolFilters: {}
 };
 let memoryCache = new Map();
 
@@ -302,9 +326,9 @@ function resultKind(s){
 }
 
 const PRESETS = {
-  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:65, topN:35, minVol:30000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'RESEARCH'},
-  BALANCED:{minRaw:50, forwardTp1:45, tradeTp1:66, topN:28, minVol:50000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'BALANCED'},
-  TRADE:{minRaw:60, forwardTp1:52, tradeTp1:70, topN:20, minVol:80000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK', humanBufferSec:150, scanSec:60, earlyMode:'ON', manualGate:'STRICT'}
+  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:65, topN:35, minVol:30000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'RESEARCH', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
+  BALANCED:{minRaw:50, forwardTp1:45, tradeTp1:66, topN:28, minVol:50000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'BALANCED', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
+  TRADE:{minRaw:60, forwardTp1:52, tradeTp1:70, topN:20, minVol:80000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK', humanBufferSec:150, scanSec:60, earlyMode:'ON', manualGate:'STRICT', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:90}
 };
 
 function getCfg(){
@@ -320,6 +344,15 @@ function getCfg(){
     expireHours:+$('expireHours').value || 5,
     humanBufferSec:+($('humanBufferSec')?.value || 120),
     scanSec:+($('scanSec')?.value || 90),
+    capitalUSDT:Math.max(0, +$('capitalUSDT')?.value || 20),
+    riskPct:clamp(+$('riskPct')?.value || 2, 0.01, 100),
+    maxMarginUSDT:Math.max(0.01, +$('maxMarginUSDT')?.value || 1),
+    minLeverage:clamp(+$('minLeverage')?.value || 5, 1, 125),
+    maxLeverage:clamp(+$('maxLeverage')?.value || 125, 1, 125),
+    preferredLeverages:($('preferredLeverages')?.value || '5,10,20,25,40,50,75,100,125').trim(),
+    feeSlipBufferPct:clamp(+$('feeSlipBufferPct')?.value || 0.08, 0, 5),
+    rejectIfMinOrderExceedsRisk:$('rejectIfMinOrderExceedsRisk')?.value || 'ON',
+    orderCodeTtlSec:clamp(+$('orderCodeTtlSec')?.value || 120, 30, 600),
     earlyMode:$('earlyMode')?.value || 'ON',
     manualGate:$('manualGate')?.value || 'STRICT',
     sideMode:$('sideMode').value,
@@ -330,7 +363,7 @@ function getCfg(){
   };
 }
 function applyCfg(cfg={}){
-  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'STRICT', ...cfg};
+  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', humanBufferSec:120, scanSec:90, capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120, earlyMode:'ON', manualGate:'STRICT', ...cfg};
   for (const [k,v] of Object.entries(merged)) if ($(k)) $(k).value = v;
 }
 function saveCfg(){ state.cfg = getCfg(); saveJSON(CFG_STORE, state.cfg); setStatus('Đã lưu config local.'); }
@@ -370,6 +403,124 @@ async function getKlines(symbol, interval, limit=220, startTime){
     .filter(k => Number.isFinite(k.openTime) && Number.isFinite(k.closeTime))
     .sort((a,b)=>(a.openTime||0)-(b.openTime||0));
 }
+async function getExchangeInfo(){
+  return api('/fapi/v1/exchangeInfo');
+}
+function numFromFilter(f, keys){
+  for (const k of keys) {
+    const v = f && f[k];
+    if (v !== undefined && v !== null && v !== '' && Number.isFinite(+v)) return +v;
+  }
+  return 0;
+}
+async function getSymbolFilters(symbol){
+  symbol=String(symbol||'').toUpperCase();
+  if (state.symbolFilters && state.symbolFilters[symbol]) return state.symbolFilters[symbol];
+  const info=await getExchangeInfo();
+  const item=(info.symbols||[]).find(x=>x.symbol===symbol);
+  if (!item) throw new Error(`Không tìm thấy exchangeInfo cho ${symbol}`);
+  const byType=Object.fromEntries((item.filters||[]).map(f=>[f.filterType,f]));
+  const priceF=byType.PRICE_FILTER||{};
+  const lotF=byType.LOT_SIZE||{};
+  const marketLotF=byType.MARKET_LOT_SIZE||{};
+  const minNotionalF=byType.MIN_NOTIONAL||byType.NOTIONAL||{};
+  const out={
+    symbol,
+    pricePrecision:item.pricePrecision,
+    quantityPrecision:item.quantityPrecision,
+    tickSize:numFromFilter(priceF,['tickSize']),
+    minPrice:numFromFilter(priceF,['minPrice']),
+    maxPrice:numFromFilter(priceF,['maxPrice']),
+    stepSize:numFromFilter(lotF,['stepSize']) || numFromFilter(marketLotF,['stepSize']) || Math.pow(10,-(item.quantityPrecision||3)),
+    minQty:numFromFilter(lotF,['minQty']) || numFromFilter(marketLotF,['minQty']),
+    maxQty:numFromFilter(lotF,['maxQty']) || numFromFilter(marketLotF,['maxQty']),
+    minNotional:numFromFilter(minNotionalF,['notional','minNotional']) || 5
+  };
+  state.symbolFilters = state.symbolFilters || {};
+  state.symbolFilters[symbol]=out;
+  return out;
+}
+function decimalsFromStep(step){
+  step=+step;
+  if (!step || !Number.isFinite(step)) return 8;
+  const s=step.toString();
+  if (s.includes('e-')) return Math.min(12, +(s.split('e-')[1]||8));
+  return s.includes('.') ? s.split('.')[1].replace(/0+$/,'').length : 0;
+}
+function roundToStep(value, step, mode='nearest'){
+  value=+value; step=+step;
+  if (!Number.isFinite(value) || !step || !Number.isFinite(step)) return value;
+  const q=value/step;
+  let n = mode==='up' ? Math.ceil(q-1e-12) : mode==='down' ? Math.floor(q+1e-12) : Math.round(q);
+  return +(n*step).toFixed(decimalsFromStep(step));
+}
+function parsePreferredLeverages(cfg){
+  const minL=clamp(+cfg.minLeverage||1,1,125), maxL=clamp(+cfg.maxLeverage||125,1,125);
+  const raw=String(cfg.preferredLeverages||'5,10,20,25,40,50,75,100,125').split(/[ ,;/|]+/).map(x=>Math.round(+x)).filter(x=>Number.isFinite(x)&&x>=minL&&x<=maxL);
+  const list=[...new Set(raw.concat([minL,maxL]))].filter(x=>x>=1&&x<=125).sort((a,b)=>a-b);
+  return list.length ? list : [Math.min(125, Math.max(1, maxL))];
+}
+async function calcRiskQuickOrder(s){
+  const cfg=getCfg();
+  const filters=await getSymbolFilters(s.symbol);
+  const entry=roundToStep(+s.entry, filters.tickSize, 'nearest');
+  const sl=roundToStep(+s.sl, filters.tickSize, 'nearest');
+  const tp1=roundToStep(+s.tp1, filters.tickSize, 'nearest');
+  const tp2=(s.tp2Enabled&&s.tp2) ? roundToStep(+s.tp2, filters.tickSize, 'nearest') : null;
+  if (!entry || !sl || !tp1 || entry===sl) throw new Error('Entry/SL/TP không hợp lệ để tính risk.');
+  const stopPct=Math.abs(entry-sl)/entry;
+  const bufferPct=(+cfg.feeSlipBufferPct||0)/100;
+  const effectiveStopPct=stopPct+bufferPct;
+  const capitalUSDT=Math.max(0,+cfg.capitalUSDT||0);
+  const riskPct=Math.max(0,+cfg.riskPct||0);
+  const riskUSDT=capitalUSDT*riskPct/100;
+  if (capitalUSDT<=0 || riskPct<=0 || riskUSDT<=0) throw new Error('Capital hoặc Risk % chưa hợp lệ.');
+  const minNotional=Math.max(+filters.minNotional||5, 0);
+  const minQty=Math.max(+filters.minQty||0, 0);
+  const stepSize=+filters.stepSize||0;
+  const minQtyByNotional=minNotional>0 ? minNotional/entry : 0;
+  const rawQty=Math.max(minQty, minQtyByNotional);
+  const qty=roundToStep(rawQty, stepSize, 'up');
+  const actualNotional=qty*entry;
+  const actualRiskUSDT=actualNotional*effectiveStopPct;
+  const riskBasedMaxNotional=riskUSDT/effectiveStopPct;
+  const riskExceeded=actualRiskUSDT > riskUSDT + 1e-9;
+  if (riskExceeded && cfg.rejectIfMinOrderExceedsRisk==='ON') {
+    throw new Error(`Min order ${actualNotional.toFixed(4)} USDT làm risk ${actualRiskUSDT.toFixed(4)} USDT > risk cho phép ${riskUSDT.toFixed(4)} USDT.`);
+  }
+  const maxMarginUSDT=Math.max(0.01,+cfg.maxMarginUSDT||1);
+  const requiredLeverage=Math.max(1,Math.ceil(actualNotional/maxMarginUSDT));
+  const levList=parsePreferredLeverages(cfg);
+  const leverage=levList.find(x=>x>=requiredLeverage);
+  if (!leverage) throw new Error(`Cần leverage >= x${requiredLeverage} để margin <= ${maxMarginUSDT} USDT, nhưng Max leverage/list hiện tại không đủ.`);
+  const marginUSDT=actualNotional/leverage;
+  if (marginUSDT > maxMarginUSDT + 1e-9) throw new Error(`Margin ${marginUSDT.toFixed(4)} USDT vẫn vượt max ${maxMarginUSDT} USDT.`);
+  return {
+    filters,
+    entry, sl, tp1, tp2,
+    qty:+qty.toFixed(decimalsFromStep(stepSize)),
+    minNotional:+minNotional.toFixed(8),
+    minQty,
+    stepSize,
+    tickSize:filters.tickSize,
+    capitalUSDT:+capitalUSDT.toFixed(4),
+    riskPct:+riskPct.toFixed(4),
+    riskUSDT:+riskUSDT.toFixed(6),
+    stopPct:+(stopPct*100).toFixed(6),
+    feeSlipBufferPct:+cfg.feeSlipBufferPct||0,
+    effectiveStopPct:+(effectiveStopPct*100).toFixed(6),
+    riskBasedMaxNotional:+riskBasedMaxNotional.toFixed(6),
+    actualNotional:+actualNotional.toFixed(8),
+    actualRiskUSDT:+actualRiskUSDT.toFixed(6),
+    riskExceeded,
+    maxMarginUSDT:+maxMarginUSDT.toFixed(4),
+    requiredLeverage,
+    leverage,
+    marginUSDT:+marginUSDT.toFixed(6),
+    preferredLeverages:levList
+  };
+}
+
 async function getUniverse(){
   const cfg = getCfg();
   try {
@@ -973,8 +1124,8 @@ function render(){
   $('learningView').classList.add('hide'); $('debugView').classList.add('hide'); $('tableView').classList.remove('hide');
   const rows=currentRows();
   $('tableView').innerHTML = `<table><thead><tr>
-    <th>Signal</th><th>Bucket / Status</th><th>Playbook</th><th>Prices</th><th>Probabilities</th><th>Edge</th><th>Market</th><th>Actionable</th><th>Reasons</th><th>Times</th>
-  </tr></thead><tbody>${rows.map(rowHTML).join('') || `<tr><td colspan="10" class="muted">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
+    <th>Signal</th><th>Bucket / Status</th><th>Playbook</th><th>Prices</th><th>Probabilities</th><th>Edge</th><th>Market</th><th>Actionable</th><th>Quick Order</th><th>Reasons</th><th>Times</th>
+  </tr></thead><tbody>${rows.map(rowHTML).join('') || `<tr><td colspan="11" class="muted">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
 }
 function rowHTML(s){
   return `<tr>
@@ -988,6 +1139,7 @@ function rowHTML(s){
     <td><span class="score ${scoreClass(s.edgeScore)}">${s.edgeScore||0}</span><br>Raw ${s.score||0}<br>EV <b class="${(s.ev||0)>0?'good':'warn'}">${fmt(s.ev,2)}R</b><br>MFE/MAE ${fmt(s.mfe,1)} / ${fmt(s.mae,1)}</td>
     <td>${s.marketRegime||'-'}<br>ADX ${fmt(s.adx,1)}<br>RSI ${fmt(s.rsi,1)}<br>ATR ${fmt(s.atrPct,2)}%<br>24hVol ${s.symbol24hVolume?fmt(s.symbol24hVolume/1000000,1)+'M':'-'}</td>
     <td><b class="${manualTradeableForStats(s)?'good':'warn'}">${manualTradeableForStats(s)?'TRADEABLE':'NOT TRADEABLE'}</b><br>${escapeHTML(s.actionStatus||'-')}<br>Detected ${dateFmt(s.detectedAt)}<br>Actionable ${dateFmt(s.actionableAt)}</td>
+    <td>${orderButtonHTML(s)}</td>
     <td>${(s.reasons||[]).slice(0,7).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('')}</td>
     <td>Signal ${dateFmt(s.signalTime)}<br>Entry ${dateFmt(s.entryHitTime)}<br>TP1 ${dateFmt(s.tp1HitTime)}<br>Close ${dateFmt(s.closeTime)}</td>
   </tr>`;
@@ -1008,6 +1160,118 @@ function statusClass(s){
 function scoreClass(v){ return v>=72?'good':v>=55?'warn':'bad'; }
 function dateFmt(t){ return t ? new Date(t).toLocaleString('vi-VN') : '-'; }
 function escapeHTML(str){ return String(str).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+function jsStr(str){ return String(str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n').replace(/\r/g,''); }
+function canCopyOrder(s){
+  if (!s) return [false,'Không có signal'];
+  if (s.bucket !== 'TRADE_READY') return [false,'Chỉ Trade Ready mới được copy mã'];
+  if (!statusOpen(s)) return [false,'Signal đã đóng'];
+  if (s.entryHitTime) return [false,'Entry đã hit, không còn là lệnh chờ'];
+  if (!s.entry || !s.sl || !s.tp1) return [false,'Thiếu Entry/SL/TP1'];
+  if (/MISSED|TOO_CLOSE|TP_ALREADY|LATE/i.test(String(s.actionStatus||s.status||s.result||''))) return [false,'Signal không còn kịp thao tác'];
+  if (s.manualTradeable === false) return [false,'Không đạt Manual Gate'];
+  const act = +s.actionableAt || 0;
+  if (act && Date.now() > act + (getCfg().orderCodeTtlSec||120)*1000) return [false,'Signal đã quá hạn copy'];
+  return [true,'OK'];
+}
+function orderButtonHTML(s){
+  const [ok, why] = canCopyOrder(s);
+  if (!ok) return `<button class="copybtn disabled" disabled title="${escapeHTML(why)}">Không copy</button><br><span class="muted">${escapeHTML(why)}</span>`;
+  const cfg=getCfg();
+  return `<button class="copybtn" onclick="copyOrderCode('${jsStr(s.id)}')">Copy Binance Code</button><br><span class="muted">Risk ${fmt(cfg.riskPct,2)}% · max margin ${fmt(cfg.maxMarginUSDT,2)} USDT</span>`;
+}
+function b64urlEncodeUnicode(str){
+  const utf8 = new TextEncoder().encode(str);
+  let bin=''; utf8.forEach(b=>bin+=String.fromCharCode(b));
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function shortChecksum(str){
+  let h=2166136261;
+  for (let i=0;i<str.length;i++){ h ^= str.charCodeAt(i); h = Math.imul(h,16777619); }
+  return (h>>>0).toString(36).toUpperCase();
+}
+async function makeOrderPayload(s){
+  const cfg=getCfg();
+  const risk=await calcRiskQuickOrder(s);
+  const createdAt=Date.now();
+  const ttl=(+cfg.orderCodeTtlSec||120)*1000;
+  const payload={
+    version:'FTA_ORDER_V1',
+    engineVersion:'FTA_V6_8_RISK_QUICK_ORDER',
+    mode:'SEMI_AUTO_FILL_ONLY',
+    symbol:s.symbol,
+    side:s.side,
+    orderType:'LIMIT',
+    marginMode:'ISOLATED',
+    positionMode:'ONE_WAY',
+    leverage:risk.leverage,
+    marginUSDT:risk.marginUSDT,
+    maxMarginUSDT:risk.maxMarginUSDT,
+    notionalUSDT:risk.actualNotional,
+    estimatedQty:risk.qty,
+    qty:risk.qty,
+    entry:risk.entry,
+    tp1:risk.tp1,
+    tp2:risk.tp2,
+    sl:risk.sl,
+    tp2Enabled:!!(s.tp2Enabled&&s.tp2),
+    capitalUSDT:risk.capitalUSDT,
+    riskPct:risk.riskPct,
+    riskUSDT:risk.riskUSDT,
+    stopPct:risk.stopPct,
+    feeSlipBufferPct:risk.feeSlipBufferPct,
+    effectiveStopPct:risk.effectiveStopPct,
+    actualRiskUSDT:risk.actualRiskUSDT,
+    riskBasedMaxNotional:risk.riskBasedMaxNotional,
+    minNotional:risk.minNotional,
+    minQty:risk.minQty,
+    stepSize:risk.stepSize,
+    tickSize:risk.tickSize,
+    requiredLeverage:risk.requiredLeverage,
+    preferredLeverages:risk.preferredLeverages,
+    riskExceeded:!!risk.riskExceeded,
+    riskGuard:cfg.rejectIfMinOrderExceedsRisk,
+    sourceSignalId:s.id,
+    playbook:s.playbook,
+    marketRegime:s.marketRegime,
+    signalTime:+s.signalTime||null,
+    detectedAt:+s.detectedAt||Date.parse(s.createdAt||'')||null,
+    actionableAt:+s.actionableAt||null,
+    codeCreatedAt:createdAt,
+    expiresAt:createdAt+ttl,
+    humanBufferSec:+s.humanBufferSec||cfg.humanBufferSec||120,
+    priceAtSignal:+s.signalPrice||null,
+    copyNote:'FTA chỉ tạo mã để extension auto-fill Binance. Extension không tự bấm đặt lệnh.',
+    riskNote:'Qty dùng min order Binance sau làm tròn LOT_SIZE. Leverage được chọn để margin <= maxMarginUSDT; nếu min order vượt risk và Risk Guard ON thì không tạo mã.'
+  };
+  const raw=JSON.stringify(payload);
+  payload.checksum=shortChecksum(raw);
+  return payload;
+}
+function makeOrderCodeFromPayload(payload){
+  return 'FTAORDER:v1:'+b64urlEncodeUnicode(JSON.stringify(payload));
+}
+async function copyText(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); const ok=document.execCommand('copy'); ta.remove(); return ok;
+  }
+}
+async function copyOrderCode(id){
+  const s=state.signals.find(x=>x.id===id) || state.raw.find(x=>x.id===id);
+  const [ok, why]=canCopyOrder(s);
+  if (!ok) return setStatus('Không thể copy order code: '+why);
+  try{
+    setStatus(`Đang tính min order Binance + risk cho ${s.symbol}...`);
+    const p=await makeOrderPayload(s);
+    const code=makeOrderCodeFromPayload(p);
+    const copied=await copyText(code);
+    const riskWarn=p.riskExceeded ? ' CẢNH BÁO: min order vượt risk setting.' : '';
+    setStatus(copied ? `Đã copy Binance Code: ${p.symbol} ${p.side} x${p.leverage} · margin ${fmt(p.marginUSDT,4)} USDT · qty ${fmt(p.qty,10)} · risk ${fmt(p.actualRiskUSDT,4)}/${fmt(p.riskUSDT,4)} USDT.${riskWarn} Mã hết hạn sau ${Math.round((p.expiresAt-Date.now())/1000)} giây.` : 'Không copy được vào clipboard.');
+  }catch(e){
+    setStatus('Không thể tạo Binance Code: '+(e.message||e));
+  }
+}
 
 function renderMetrics(){
   repairAllInvalidTimeOrders(false);
@@ -1044,7 +1308,7 @@ function renderDebug(){
 }
 
 function exportJSON(){
-  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB_V6_6_ACTIONABLE', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals},null,2)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB_V6_8_RISK_QUICK_ORDER', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals},null,2)], {type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`fta-v6-edge-lab-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
 }
 async function importJSON(file){
