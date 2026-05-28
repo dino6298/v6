@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>FTA v6 Edge Lab v6.11 - Card View No Horizontal Scroll</title>
+  <title>FTA v6 Edge Lab v6.12 - Card View No Horizontal Scroll</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -364,7 +364,7 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab v6.11 - Card View No Horizontal Scroll + Binance-safe rate limiter + actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
+/* FTA v6 Edge Lab v6.12 - Card View No Horizontal Scroll + Binance-safe rate limiter + actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
@@ -1095,23 +1095,72 @@ async function scan(){
   }catch(e){ setStatus('Scan lỗi: '+e.message); setProgress(0); }
 }
 
+function calcTrackFetchStart(s){
+  normalizeActionability(s);
+  const det = +s.detectedAt || Date.parse(s.createdAt||'') || +s.signalTime || Date.now();
+  const actionableAt = +s.actionableAt || (det + (+s.humanBufferSec||getCfg().humanBufferSec||120)*1000);
+  const trackingStart = Math.max(+s.signalTime||0, det, actionableAt);
+  const baseTime = +s.entryHitTime || +s.signalTime || det || Date.now();
+  return Math.max(Math.min(baseTime, trackingStart) - 120000, Date.now() - 1000*60*60*24*5);
+}
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 async function trackAll(){
   repairAllInvalidTimeOrders(false);
   state.signals.forEach(normalizeActionability);
-  let list = state.signals.filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY');
-  const maxTrack = 35;
-  if (list.length > maxTrack) list = list.slice(0, maxTrack);
+  const list = state.signals
+    .filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY')
+    .sort((a,b)=>{
+      const pr = {TRADE_READY:0, FORWARD_TEST:1, SHADOW_TEST:2};
+      const pa = pr[a.bucket] ?? 9, pb = pr[b.bucket] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return (+a.signalTime||0) - (+b.signalTime||0);
+    });
+
   if (!list.length) return setStatus('Không có signal active để track.');
-  setStatus(`Đang forward-track tối đa ${list.length} signal bằng nến ${getCfg().trackInterval} (rate-safe mode)...`);
-  let done=0;
-  for (const s of list){
-    try{ await trackOne(s); }catch(e){ s.notes = [...(s.notes||[]), `Track error: ${e.message}`]; if (e.rateLimited) { setStatus(e.message); break; } }
-    done++; setProgress(done/list.length*100);
-    if (done % 5 === 0) { saveJSON(STORE,state.signals); render(); }
+
+  const groups = new Map();
+  for (const sig of list){
+    const key = `${sig.symbol}|${sig.trackInterval || getCfg().trackInterval}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(sig);
   }
+
+  const groupEntries = Array.from(groups.entries());
+  setStatus(`Đang forward-track TOÀN BỘ ${list.length} signal active bằng nến ${getCfg().trackInterval} theo ${groupEntries.length} nhóm symbol (rate-safe grouped mode)...`);
+
+  let doneSignals = 0, doneGroups = 0;
+  const totalSignals = list.length;
+  const delayMs = 220;
+
+  for (const [key, signals] of groupEntries){
+    const [symbol, interval] = key.split('|');
+    try{
+      const minStart = Math.min(...signals.map(calcTrackFetchStart));
+      const candles = await getKlines(symbol, interval || getCfg().trackInterval, 1000, minStart);
+      for (const sig of signals){
+        try{
+          await trackOne(sig, candles);
+        }catch(e){
+          sig.notes = [...(sig.notes||[]), `Track error: ${e.message}`];
+        }
+        doneSignals++;
+        setProgress(doneSignals/totalSignals*100);
+      }
+    }catch(e){
+      for (const sig of signals) sig.notes = [...(sig.notes||[]), `Track group error ${symbol}: ${e.message}`];
+      doneSignals += signals.length;
+      setProgress(doneSignals/totalSignals*100);
+      if (e.rateLimited) { setStatus(e.message + ` · Đã track ${doneSignals}/${totalSignals}, còn lại sẽ tiếp tục ở vòng sau.`); break; }
+    }
+    doneGroups++;
+    if (doneGroups % 3 === 0) { saveJSON(STORE,state.signals); render(); }
+    // Nhịp nghỉ nhỏ để tránh Binance 418/429 nhưng vẫn quét hết backlog theo nhóm symbol.
+    await sleep(delayMs);
+  }
+
   saveJSON(STORE,state.signals);
   render();
-  setStatus(`Track xong ${list.length} signal. Learning stats đã cập nhật theo outcome mới.`);
+  setStatus(`Track xong ${Math.min(doneSignals,totalSignals)}/${totalSignals} signal active qua ${doneGroups}/${groupEntries.length} nhóm symbol. Learning stats đã cập nhật theo outcome mới.`);
   scheduleCloudSync('track');
 }
 function invalidTimeOrderReason(s){
@@ -1183,7 +1232,7 @@ function normalizeActionability(s){
   }
   return s;
 }
-async function trackOne(s){
+async function trackOne(s, preloadedCandles=null){
   normalizeActionability(s);
   repairInvalidTimeOrder(s);
   const det = +s.detectedAt || Date.parse(s.createdAt||'') || +s.signalTime || Date.now();
@@ -1191,7 +1240,7 @@ async function trackOne(s){
   const trackingStart = Math.max(+s.signalTime||0, det, actionableAt);
   const baseTime = +s.entryHitTime || +s.signalTime || det || Date.now();
   const start = Math.max(Math.min(baseTime, trackingStart) - 120000, Date.now() - 1000*60*60*24*5);
-  const candles = await getKlines(s.symbol, s.trackInterval || getCfg().trackInterval, 1000, start);
+  const candles = preloadedCandles || await getKlines(s.symbol, s.trackInterval || getCfg().trackInterval, 1000, start);
   repairInvalidTimeOrder(s);
   const expiry = trackingStart + (s.expireHours || getCfg().expireHours)*3600000;
   let entered=!!s.entryHitTime, tp1=!!s.tp1HitTime, closed=statusClosed(s);
