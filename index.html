@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>FTA v6 Edge Lab v6.10 - UI Full View</title>
+  <title>FTA v6 Edge Lab v6.11 - Card View No Horizontal Scroll</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -137,6 +137,42 @@
       .tablebox:before{font-size:11px;line-height:1.35}
     }
 
+  
+
+    /* ===== V6.11 CARD VIEW - NO HORIZONTAL SCROLL ===== */
+    .tablebox{overflow:visible!important;border:0!important;background:transparent!important;padding:0!important;border-radius:0!important}
+    .tablebox:before{display:none!important;content:none!important}
+    .signal-list{display:grid;grid-template-columns:1fr;gap:12px;width:100%;max-width:100%}
+    .signal-card{border:1px solid var(--border);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,40,.96),rgba(9,15,27,.94));box-shadow:var(--shadow);overflow:hidden;min-width:0}
+    .signal-card-head{display:grid;grid-template-columns:minmax(0,1.2fr) auto;gap:12px;align-items:start;padding:13px 14px;border-bottom:1px solid var(--border);background:rgba(125,211,252,.035)}
+    .signal-title-wrap{min-width:0;display:grid;gap:7px}
+    .signal-title-line{display:flex;flex-wrap:wrap;gap:7px;align-items:center;min-width:0}
+    .signal-title-line .symbol{font-size:17px;line-height:1.1}
+    .signal-id-line{display:grid;gap:3px;min-width:0}
+    .signal-id-line .mono{font-size:10.5px}
+    .signal-actions{min-width:220px;max-width:280px}
+    .signal-card-body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:12px 14px}
+    .info-panel{border:1px solid rgba(38,53,80,.85);background:#0b1220;border-radius:14px;padding:10px;min-width:0;display:grid;gap:7px;align-content:start}
+    .info-panel h4{margin:0;color:var(--blue);font-size:12px;letter-spacing:-.01em;text-transform:uppercase}
+    .kv-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+    .kv{min-width:0;border:1px solid rgba(38,53,80,.65);border-radius:10px;padding:7px;background:rgba(18,30,51,.55)}
+    .kv span{display:block;color:var(--muted);font-size:10.5px;line-height:1.25;margin-bottom:2px}
+    .kv b{display:block;color:var(--text);font-size:12px;line-height:1.25;overflow-wrap:anywhere}
+    .kv b.good,.kv b.bad,.kv b.warn,.kv b.blue{display:block}
+    .panel-line{font-size:12px;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+    .panel-line b{color:var(--text)}
+    .card-pill-list{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
+    .signal-detail{margin:0 14px 14px!important;border:1px solid rgba(125,211,252,.16)!important;background:rgba(8,14,26,.88)!important;border-radius:14px!important;padding:9px 10px!important}
+    .signal-detail summary{cursor:pointer;color:var(--blue);font-weight:900;font-size:12px;outline:none;user-select:none;line-height:1.35}
+    .full-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:9px}
+    .detail-card{min-width:0}
+    .quick-status{display:grid;gap:7px}
+    .action-badge{font-size:12px;font-weight:950;line-height:1.25}
+    table.signal-table{display:none!important}
+    @media(max-width:1420px){.signal-card-body{grid-template-columns:repeat(2,minmax(0,1fr))}.full-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.grid-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+    @media(max-width:820px){.signal-card-head{grid-template-columns:1fr}.signal-actions{min-width:0;max-width:none}.signal-card-body{grid-template-columns:1fr}.kv-grid{grid-template-columns:1fr 1fr}.full-detail-grid{grid-template-columns:1fr}.top-actions{grid-template-columns:1fr 1fr}.grid-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:520px){.wrap{width:100vw;padding:9px}.signal-card-head,.signal-card-body{padding:10px}.signal-detail{margin:0 10px 10px!important}.kv-grid{grid-template-columns:1fr}.top-actions,.row,.row3{grid-template-columns:1fr}.grid-metrics{grid-template-columns:1fr}.pill,.tag{font-size:10.5px;padding:4px 7px}.copybtn{font-size:11px}}
+
   </style>
 </head>
 <body>
@@ -147,7 +183,7 @@
       <div class="sub">
         Outcome-driven futures assistant: scan rộng để thu thập mẫu, tự đưa tín hiệu vào Shadow/Forward Test,
         học xác suất Entry Fill / TP1 before SL / TP2 / Expired Risk, rồi mới nâng cấp tín hiệu lên Trade Ready.
-        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh. V6.10 bổ sung UI Full View: bảng không còn bị che/cắt thông tin, có hàng chi tiết mở rộng cho từng signal, vẫn giữ Risk Quick Order và Binance-safe limiter.
+        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh. V6.11 đổi sang Card View không dùng scroll ngang: mỗi signal là một thẻ rõ ràng, có vùng tóm tắt và chi tiết đầy đủ, vẫn giữ Risk Quick Order và Binance-safe limiter.
       </div>
     </div>
     <div class="top-actions">
@@ -328,7 +364,7 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab v6.10 - UI Full View + Binance-safe rate limiter + actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
+/* FTA v6 Edge Lab v6.11 - Card View No Horizontal Scroll + Binance-safe rate limiter + actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
@@ -1245,34 +1281,111 @@ function render(){
   if (state.activeTab==='debug') return renderDebug();
   $('learningView').classList.add('hide'); $('debugView').classList.add('hide'); $('tableView').classList.remove('hide');
   const rows=currentRows();
-  $('tableView').innerHTML = `<table class="signal-table"><thead><tr>
-    <th>Signal</th><th>Bucket / Status</th><th>Playbook</th><th>Prices</th><th>Probabilities</th><th>Edge</th><th>Market</th><th>Actionable</th><th>Quick Order</th><th>Reasons</th><th>Times</th>
-  </tr></thead><tbody>${rows.map(rowHTML).join('') || `<tr><td colspan="11" class="muted">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
+  $('tableView').innerHTML = `<div class="signal-list">${rows.map(rowHTML).join('') || `<div class="card muted">Chưa có dữ liệu.</div>`}</div>`;
 }
 function rowHTML(s){
-  const main = `<tr class="signal-main-row">
-    <td><div class="cell-stack"><a class="symbol" href="${binanceUrl(s.symbol)}" target="_blank" rel="noopener">${s.symbol||'-'}</a>
-      <div><span class="tag ${s.side==='LONG'?'long':'short'}">${s.side||'-'}</span> <span class="pill">${s.interval||'-'} / ${s.trackInterval||'-'}</span></div>
-      <div class="mono">${s.id||'-'}</div></div></td>
-    <td><div class="cell-stack">${bucketTag(s.bucket)}<span class="tag ${statusClass(s)}">${s.status||'-'}</span><span class="pill">Grade ${s.grade||'-'}</span><span class="cell-sub">Result: ${escapeHTML(s.result||'-')}</span></div></td>
-    <td><div class="cell-stack"><span class="cell-title">${s.playbook||'-'}</span><span class="cell-sub">Dup: ${escapeHTML(s.duplicateState||'OK')}</span><span class="cell-sub">Key: ${escapeHTML(s.learningKey||'-')}</span></div></td>
-    <td><div class="cell-stack">Entry <b>${fmt(s.entry,8)}</b> SL <b class="bad">${fmt(s.sl,8)}</b> TP1 <b class="good">${fmt(s.tp1,8)}</b> TP2 <b class="${s.tp2Enabled?'good':'muted'}">${s.tp2Enabled?fmt(s.tp2,8):'OFF'}</b></div></td>
-    <td><div class="cell-stack">Entry Fill <b>${pct(s.entryFillProb)}</b> TP1 before SL <b>${pct(s.tp1Prob)}</b> TP2 <b>${pct(s.tp2Prob)}</b> SL Risk <b class="${(s.slRisk||0)>48?'bad':'muted'}">${pct(s.slRisk)}</b> Expired <b>${pct(s.expiredRisk)}</b></div></td>
-    <td><div class="cell-stack"><span class="score ${scoreClass(s.edgeScore)}">${s.edgeScore||0}</span><span>Raw ${s.score||0}</span><span>EV <b class="${(s.ev||0)>0?'good':'warn'}">${fmt(s.ev,2)}R</b></span><span>MFE/MAE ${fmt(s.mfe,1)} / ${fmt(s.mae,1)}</span></div></td>
-    <td><div class="cell-stack"><span>${s.marketRegime||'-'}</span><span>Trend ${s.marketTrend||'-'}</span><span>ADX ${fmt(s.adx,1)} · RSI ${fmt(s.rsi,1)}</span><span>ATR ${fmt(s.atrPct,2)}%</span><span>24hVol ${s.symbol24hVolume?fmt(s.symbol24hVolume/1000000,1)+'M':(s.quoteVolume?fmt(s.quoteVolume/1000000,1)+'M':'-')}</span></div></td>
-    <td><div class="cell-stack"><b class="${manualTradeableForStats(s)?'good':'warn'}">${manualTradeableForStats(s)?'TRADEABLE':'NOT TRADEABLE'}</b><span>${escapeHTML(s.actionStatus||'-')}</span><span>Detected ${dateFmt(s.detectedAt)}</span><span>Actionable ${dateFmt(s.actionableAt)}</span><span>Buffer ${s.humanBufferSec||getCfg().humanBufferSec||'-'}s</span></div></td>
-    <td><div class="cell-stack">${orderButtonHTML(s)}</div></td>
-    <td><div class="detail-list">${(s.reasons||[]).slice(0,10).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '<span class="muted">-</span>'}</div></td>
-    <td><div class="cell-stack"><span>Signal ${dateFmt(s.signalTime)}</span><span>Entry ${dateFmt(s.entryHitTime)}</span><span>TP1 ${dateFmt(s.tp1HitTime)}</span><span>TP2 ${dateFmt(s.tp2HitTime)}</span><span>SL ${dateFmt(s.slHitTime)}</span><span>Close ${dateFmt(s.closeTime)}</span></div></td>
-  </tr>`;
-  return main + detailRowHTML(s);
+  const statusText = escapeHTML(s.status||'-');
+  const resultText = escapeHTML(s.result||'-');
+  const manualOk = manualTradeableForStats(s);
+  const volTxt = s.symbol24hVolume ? fmt(s.symbol24hVolume/1000000,1)+'M' : (s.quoteVolume ? fmt(s.quoteVolume/1000000,1)+'M' : '-');
+  const reasonsShort = (s.reasons||[]).slice(0,6).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '<span class="muted">-</span>';
+  const notesShort = (s.notes||[]).slice(0,4).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '';
+  return `<article class="signal-card">
+    <div class="signal-card-head">
+      <div class="signal-title-wrap">
+        <div class="signal-title-line">
+          <a class="symbol" href="${binanceUrl(s.symbol)}" target="_blank" rel="noopener">${s.symbol||'-'}</a>
+          <span class="tag ${s.side==='LONG'?'long':'short'}">${s.side||'-'}</span>
+          ${bucketTag(s.bucket)}
+          <span class="tag ${statusClass(s)}">${statusText}</span>
+          <span class="pill">${s.interval||'-'} / ${s.trackInterval||'-'}</span>
+          <span class="pill">Grade ${s.grade||'-'}</span>
+        </div>
+        <div class="signal-id-line">
+          <div class="mono">ID: ${escapeHTML(s.id||'-')}</div>
+          <div class="mono">Plan: ${escapeHTML(s.planKey||'-')}</div>
+        </div>
+      </div>
+      <div class="signal-actions">
+        <div class="quick-status">
+          <div class="action-badge ${manualOk?'good':'warn'}">${manualOk?'TRADEABLE':'NOT TRADEABLE'} · ${escapeHTML(s.actionStatus||'-')}</div>
+          ${orderButtonHTML(s)}
+        </div>
+      </div>
+    </div>
+
+    <div class="signal-card-body">
+      <section class="info-panel">
+        <h4>Giá vào lệnh</h4>
+        <div class="kv-grid">
+          <div class="kv"><span>Entry</span><b>${fmt(s.entry,8)}</b></div>
+          <div class="kv"><span>SL</span><b class="bad">${fmt(s.sl,8)}</b></div>
+          <div class="kv"><span>TP1</span><b class="good">${fmt(s.tp1,8)}</b></div>
+          <div class="kv"><span>TP2</span><b class="${s.tp2Enabled?'good':'muted'}">${s.tp2Enabled?fmt(s.tp2,8):'OFF'}</b></div>
+        </div>
+        <div class="panel-line">Signal price: <b>${fmt(s.signalPrice,8)}</b> · RR: <b>${fmt(s.rr,2)}</b></div>
+      </section>
+
+      <section class="info-panel">
+        <h4>Xác suất</h4>
+        <div class="kv-grid">
+          <div class="kv"><span>Entry Fill</span><b>${pct(s.entryFillProb)}</b></div>
+          <div class="kv"><span>TP1 before SL</span><b>${pct(s.tp1Prob)}</b></div>
+          <div class="kv"><span>TP2</span><b>${pct(s.tp2Prob)}</b></div>
+          <div class="kv"><span>SL Risk</span><b class="${(s.slRisk||0)>48?'bad':'muted'}">${pct(s.slRisk)}</b></div>
+        </div>
+        <div class="panel-line">Expired: <b>${pct(s.expiredRisk)}</b> · Follow: <b>${s.followScore||0}</b></div>
+      </section>
+
+      <section class="info-panel">
+        <h4>Edge & Outcome</h4>
+        <div class="kv-grid">
+          <div class="kv"><span>Edge</span><b class="${scoreClass(s.edgeScore)}">${s.edgeScore||0}</b></div>
+          <div class="kv"><span>Raw</span><b>${s.score||0}</b></div>
+          <div class="kv"><span>EV</span><b class="${(s.ev||0)>0?'good':'warn'}">${fmt(s.ev,2)}R</b></div>
+          <div class="kv"><span>Result</span><b>${resultText}</b></div>
+        </div>
+        <div class="panel-line">MFE / MAE: <b>${fmt(s.mfe,1)} / ${fmt(s.mae,1)}</b></div>
+      </section>
+
+      <section class="info-panel">
+        <h4>Market</h4>
+        <div class="kv-grid">
+          <div class="kv"><span>Regime</span><b>${escapeHTML(s.marketRegime||'-')}</b></div>
+          <div class="kv"><span>Trend</span><b>${escapeHTML(s.marketTrend||'-')}</b></div>
+          <div class="kv"><span>ADX / RSI</span><b>${fmt(s.adx,1)} / ${fmt(s.rsi,1)}</b></div>
+          <div class="kv"><span>ATR / Vol</span><b>${fmt(s.atrPct,2)}% / ${volTxt}</b></div>
+        </div>
+        <div class="panel-line">Playbook: <b>${escapeHTML(s.playbook||'-')}</b></div>
+      </section>
+
+      <section class="info-panel">
+        <h4>Thời gian</h4>
+        <div class="kv-grid">
+          <div class="kv"><span>Signal</span><b>${dateFmt(s.signalTime)}</b></div>
+          <div class="kv"><span>Detected</span><b>${dateFmt(s.detectedAt)}</b></div>
+          <div class="kv"><span>Actionable</span><b>${dateFmt(s.actionableAt)}</b></div>
+          <div class="kv"><span>Entry</span><b>${dateFmt(s.entryHitTime)}</b></div>
+        </div>
+        <div class="panel-line">TP1 ${dateFmt(s.tp1HitTime)} · TP2 ${dateFmt(s.tp2HitTime)} · SL ${dateFmt(s.slHitTime)} · Close ${dateFmt(s.closeTime)}</div>
+      </section>
+
+      <section class="info-panel">
+        <h4>Reasons / Notes</h4>
+        <div class="card-pill-list">${reasonsShort}</div>
+        ${notesShort?`<div class="card-pill-list">${notesShort}</div>`:''}
+        <div class="panel-line">Learning: <b>${escapeHTML(s.learningKey||'-')}</b></div>
+        <div class="panel-line">Duplicate: <b>${escapeHTML(s.duplicateState||'OK')}</b></div>
+      </section>
+    </div>
+    ${detailRowHTML(s)}
+  </article>`;
 }
 function detailRowHTML(s){
   const cfg=getCfg();
   const notes=(s.notes||[]).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '<span class="muted">Không có note.</span>';
   const reasons=(s.reasons||[]).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '<span class="muted">Không có reason.</span>';
-  return `<tr class="detail-row"><td colspan="11">
-    <details class="signal-detail">
+  return `<details class="signal-detail">
       <summary>Chi tiết đầy đủ: ${escapeHTML(s.symbol||'-')} ${escapeHTML(s.side||'-')} · ${escapeHTML(s.playbook||'-')} · ${escapeHTML(s.status||'-')}</summary>
       <div class="full-detail-grid">
         <div class="detail-card"><h4>Thông tin signal</h4>
@@ -1312,11 +1425,10 @@ function detailRowHTML(s){
           <div>Entry: <b>${dateFmt(s.entryHitTime)}</b></div><div>TP1: <b>${dateFmt(s.tp1HitTime)}</b></div>
           <div>TP2: <b>${dateFmt(s.tp2HitTime)}</b></div><div>SL: <b>${dateFmt(s.slHitTime)}</b></div><div>Close: <b>${dateFmt(s.closeTime)}</b></div>
         </div>
-        <div class="detail-card"><h4>Reasons</h4><div class="detail-list">${reasons}</div></div>
-        <div class="detail-card"><h4>Notes</h4><div class="detail-list">${notes}</div></div>
+        <div class="detail-card"><h4>Reasons</h4><div class="card-pill-list">${reasons}</div></div>
+        <div class="detail-card"><h4>Notes</h4><div class="card-pill-list">${notes}</div></div>
       </div>
-    </details>
-  </td></tr>`;
+    </details>`;
 }
 function bucketTag(b){
   if (b==='TRADE_READY') return `<span class="tag tradeTag">TRADE READY</span>`;
