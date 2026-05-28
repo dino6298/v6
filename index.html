@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>FTA v6 Edge Lab v6.8 - Risk Quick Order</title>
+  <title>FTA v6 Edge Lab v6.10 - UI Full View</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -82,17 +82,72 @@
       .tabs{overflow:auto;flex-wrap:nowrap}.tabs button{white-space:nowrap}
       .card{padding:12px;border-radius:16px}table{min-width:1100px}
     }
+
+
+    /* ===== V6.10 UI FULL VIEW FIX ===== */
+    main{min-width:0;max-width:100%}
+    main>.card{min-width:0;max-width:100%;overflow:visible}
+    .tablebox{
+      width:100%;max-width:100%;overflow-x:auto;overflow-y:visible;position:relative;
+      -webkit-overflow-scrolling:touch;scrollbar-gutter:stable both-edges;padding-bottom:8px;
+    }
+    .tablebox:before{
+      content:'Vuốt/kéo ngang để xem đủ cột · Bấm “Chi tiết đầy đủ” để mở toàn bộ thông tin signal';
+      display:block;position:sticky;left:0;top:0;z-index:5;margin:0;padding:8px 10px;
+      color:var(--muted);font-size:12px;background:rgba(11,18,32,.92);border-bottom:1px solid var(--border);
+    }
+    table.signal-table{width:max-content;min-width:2180px;table-layout:auto;border-collapse:separate;border-spacing:0}
+    th{position:static!important;top:auto!important;z-index:auto!important}
+    th,td{line-height:1.45;white-space:normal;overflow:visible;overflow-wrap:anywhere;word-break:normal}
+    td{background:rgba(11,18,32,.18)}
+    .signal-table th:nth-child(1),.signal-table td:nth-child(1){min-width:260px;max-width:310px}
+    .signal-table th:nth-child(2),.signal-table td:nth-child(2){min-width:165px;max-width:190px}
+    .signal-table th:nth-child(3),.signal-table td:nth-child(3){min-width:185px;max-width:220px}
+    .signal-table th:nth-child(4),.signal-table td:nth-child(4){min-width:190px;max-width:230px}
+    .signal-table th:nth-child(5),.signal-table td:nth-child(5){min-width:210px;max-width:250px}
+    .signal-table th:nth-child(6),.signal-table td:nth-child(6){min-width:145px;max-width:175px}
+    .signal-table th:nth-child(7),.signal-table td:nth-child(7){min-width:165px;max-width:205px}
+    .signal-table th:nth-child(8),.signal-table td:nth-child(8){min-width:260px;max-width:320px}
+    .signal-table th:nth-child(9),.signal-table td:nth-child(9){min-width:190px;max-width:240px}
+    .signal-table th:nth-child(10),.signal-table td:nth-child(10){min-width:330px;max-width:420px}
+    .signal-table th:nth-child(11),.signal-table td:nth-child(11){min-width:245px;max-width:310px}
+    .pill,.tag{white-space:normal;line-height:1.25;vertical-align:top;max-width:100%}
+    .pill{margin:2px 3px 2px 0}
+    .mono{white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+    .copybtn{white-space:normal;min-height:34px;line-height:1.25}
+    .cell-stack{display:grid;gap:4px;min-width:0}
+    .cell-title{font-weight:950;color:var(--text)}
+    .cell-sub{color:var(--muted);font-size:11px;line-height:1.35;overflow-wrap:anywhere}
+    tr.detail-row td{padding:0 10px 12px;background:rgba(125,211,252,.035);border-bottom:1px solid var(--border)}
+    details.signal-detail{border:1px solid rgba(125,211,252,.16);background:rgba(8,14,26,.9);border-radius:14px;padding:8px 10px;margin-top:2px}
+    details.signal-detail summary{cursor:pointer;color:var(--blue);font-weight:900;font-size:12px;outline:none;user-select:none}
+    .full-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:8px;margin-top:9px}
+    .detail-card{border:1px solid var(--border);background:#0b1220;border-radius:12px;padding:9px;min-width:0}
+    .detail-card h4{margin:0 0 6px;font-size:12px;color:var(--blue);letter-spacing:-.01em}
+    .detail-card div{font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+    .detail-card b{color:var(--text)}
+    .detail-list{display:flex;flex-wrap:wrap;gap:4px}
+    @media(max-width:1200px){
+      table.signal-table{min-width:2100px}
+      .full-detail-grid{grid-template-columns:repeat(2,minmax(220px,1fr))}
+    }
+    @media(max-width:640px){
+      table.signal-table{min-width:1950px}
+      .full-detail-grid{grid-template-columns:1fr}
+      .tablebox:before{font-size:11px;line-height:1.35}
+    }
+
   </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div>
-      <h1>FTA v6 Edge Lab v6.8</h1>
+      <h1>FTA v6 Edge Lab v6.10</h1>
       <div class="sub">
         Outcome-driven futures assistant: scan rộng để thu thập mẫu, tự đưa tín hiệu vào Shadow/Forward Test,
         học xác suất Entry Fill / TP1 before SL / TP2 / Expired Risk, rồi mới nâng cấp tín hiệu lên Trade Ready.
-        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh. V6.8 bổ sung Risk Quick Order: tự tính qty/margin/leverage theo Capital, Risk %, min order Binance và giới hạn margin/order.
+        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh. V6.10 bổ sung UI Full View: bảng không còn bị che/cắt thông tin, có hàng chi tiết mở rộng cho từng signal, vẫn giữ Risk Quick Order và Binance-safe limiter.
       </div>
     </div>
     <div class="top-actions">
@@ -144,7 +199,7 @@
         </div>
         <div class="row">
           <label>Human buffer giây <input id="humanBufferSec" type="number" min="0" max="600" value="120"></label>
-          <label>Auto scan giây <input id="scanSec" type="number" min="60" max="1800" value="90"></label>
+          <label>Auto scan giây <input id="scanSec" type="number" min="120" max="1800" value="180"></label>
         </div>
         <div class="row3">
           <label>Capital USDT <input id="capitalUSDT" type="number" min="1" step="0.1" value="20"></label>
@@ -202,7 +257,7 @@
       </div>
 
       <div class="notice">
-        V6.8 giữ Actionability Gate và thêm Risk Quick Order: chỉ signal Trade Ready còn kịp vào lệnh mới hiện nút Copy Binance Code. Qty/margin/leverage được tính theo Capital, Risk %, min order Binance và max margin/order. Extension chỉ auto-fill form, không tự bấm đặt lệnh.
+        V6.10 giữ Actionability Gate, Risk Quick Order và chỉnh lại UI Full View: chỉ signal Trade Ready còn kịp vào lệnh mới hiện nút Copy Binance Code. Qty/margin/leverage được tính theo Capital, Risk %, min order Binance và max margin/order. Extension chỉ auto-fill form, không tự bấm đặt lệnh.
       </div>
 
       <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
@@ -273,7 +328,7 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab v6.8 - actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
+/* FTA v6 Edge Lab v6.10 - UI Full View + Binance-safe rate limiter + actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
@@ -294,7 +349,12 @@ let state = {
   pendingCloudSync: false,
   lastCloudError: null,
   volume24h: {},
-  symbolFilters: {}
+  symbolFilters: {},
+  binanceBanUntil: 0,
+  lastBinance429: null,
+  klineWindowCache: new Map(),
+  requestQueue: Promise.resolve(),
+  requestMinDelayMs: 300
 };
 let memoryCache = new Map();
 
@@ -326,9 +386,9 @@ function resultKind(s){
 }
 
 const PRESETS = {
-  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:65, topN:35, minVol:30000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'RESEARCH', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
-  BALANCED:{minRaw:50, forwardTp1:45, tradeTp1:66, topN:28, minVol:50000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'BALANCED', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
-  TRADE:{minRaw:60, forwardTp1:52, tradeTp1:70, topN:20, minVol:80000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK', humanBufferSec:150, scanSec:60, earlyMode:'ON', manualGate:'STRICT', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:90}
+  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:65, topN:25, minVol:50000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:180, earlyMode:'ON', manualGate:'RESEARCH', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
+  BALANCED:{minRaw:50, forwardTp1:45, tradeTp1:66, topN:20, minVol:80000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:180, earlyMode:'ON', manualGate:'BALANCED', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
+  TRADE:{minRaw:60, forwardTp1:52, tradeTp1:70, topN:15, minVol:100000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK', humanBufferSec:150, scanSec:120, earlyMode:'ON', manualGate:'STRICT', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:90}
 };
 
 function getCfg(){
@@ -363,7 +423,7 @@ function getCfg(){
   };
 }
 function applyCfg(cfg={}){
-  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', humanBufferSec:120, scanSec:90, capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120, earlyMode:'ON', manualGate:'STRICT', ...cfg};
+  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', humanBufferSec:120, scanSec:180, capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120, earlyMode:'ON', manualGate:'STRICT', ...cfg};
   for (const [k,v] of Object.entries(merged)) if ($(k)) $(k).value = v;
 }
 function saveCfg(){ state.cfg = getCfg(); saveJSON(CFG_STORE, state.cfg); setStatus('Đã lưu config local.'); }
@@ -378,6 +438,39 @@ function candleFromK(k){
   return {openTime:k[0], open:+k[1], high:+k[2], low:+k[3], close:+k[4], volume:+k[5], closeTime:k[6], quoteVolume:+k[7]};
 }
 function qs(params){ return new URLSearchParams(Object.entries(params).filter(([,v]) => v !== undefined && v !== null && v !== '')).toString(); }
+function sleep(ms){ return new Promise(r=>setTimeout(r, Math.max(0, ms||0))); }
+function retryAfterMs(res){
+  const raw = res?.headers?.get?.('Retry-After');
+  if (!raw) return 0;
+  const n = Number(raw);
+  if (Number.isFinite(n)) return n > 1000 ? n : n * 1000;
+  const d = Date.parse(raw);
+  return Number.isFinite(d) ? Math.max(0, d - Date.now()) : 0;
+}
+function makeRateLimitError(status, path, waitMs){
+  const e = new Error(`HTTP ${status} ${path}. Binance đang giới hạn/ban IP. Tạm dừng ${Math.ceil((waitMs||0)/1000)}s rồi thử lại.`);
+  e.rateLimited = true; e.status = status; e.waitMs = waitMs || 0; return e;
+}
+function pauseAutoForRateLimit(waitMs){
+  const ms = Math.max(waitMs||0, 120000);
+  state.binanceBanUntil = Math.max(state.binanceBanUntil||0, Date.now()+ms);
+  state.lastBinance429 = new Date().toISOString();
+  if (state.autoTimer) { clearInterval(state.autoTimer); state.autoTimer = null; }
+}
+async function queuedFetch(url, opts={}){
+  const run = async()=>{
+    const waitBan = (state.binanceBanUntil||0) - Date.now();
+    if (waitBan > 0) throw makeRateLimitError(418, new URL(url).pathname, waitBan);
+    const gap = Math.max(250, state.requestMinDelayMs || 300);
+    const since = Date.now() - (state.lastRequestAt || 0);
+    if (since < gap) await sleep(gap - since);
+    state.lastRequestAt = Date.now();
+    return fetch(url, opts);
+  };
+  const p = state.requestQueue.then(run, run);
+  state.requestQueue = p.catch(()=>{});
+  return p;
+}
 async function api(path, params={}){
   const cfg = getCfg();
   const query = qs(params);
@@ -385,23 +478,50 @@ async function api(path, params={}){
   let url = direct;
   if (cfg.proxyUrl) url = `${cfg.proxyUrl}${path}${query ? '?' + query : ''}`;
   const cacheKey = url;
-  const ttl = path.includes('/ticker/24hr') ? 25000 : path.includes('/exchangeInfo') ? 3600000 : 6000;
+  const ttl = path.includes('/ticker/24hr') ? 45000 : path.includes('/exchangeInfo') ? 7200000 : path.includes('/klines') ? 15000 : 10000;
   const cached = memoryCache.get(cacheKey);
   if (cached && Date.now()-cached.t < ttl) return cached.v;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${path}`);
+
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), 20000);
+  let res;
+  try {
+    res = await queuedFetch(url, {signal: controller.signal});
+  } finally { clearTimeout(timer); }
+
+  if (res.status === 418 || res.status === 429) {
+    const waitMs = Math.max(retryAfterMs(res), res.status === 418 ? 10*60*1000 : 2*60*1000);
+    pauseAutoForRateLimit(waitMs);
+    throw makeRateLimitError(res.status, path, waitMs);
+  }
+  if (!res.ok) {
+    let body='';
+    try { body = await res.text(); } catch {}
+    throw new Error(`HTTP ${res.status} ${path}${body ? ' · ' + body.slice(0,180) : ''}`);
+  }
   const data = await res.json();
   memoryCache.set(cacheKey,{t:Date.now(),v:data});
   return data;
 }
 async function getKlines(symbol, interval, limit=220, startTime){
+  symbol = String(symbol||'').toUpperCase();
+  const reqStart = startTime ? +startTime : 0;
+  state.klineWindowCache ||= new Map();
+  const winKey = `${symbol}|${interval}|${limit}`;
+  const cached = state.klineWindowCache.get(winKey);
+  if (cached && Date.now()-cached.fetchedAt < 20000 && (!reqStart || cached.startTime <= reqStart)) {
+    const reused = reqStart ? cached.rows.filter(k => (k.openTime||0) >= reqStart - 60000) : cached.rows;
+    if (reused.length >= Math.min(40, limit/4)) return reused;
+  }
   const params = {symbol, interval, limit};
   if (startTime) params.startTime = startTime;
   const rows = await api('/fapi/v1/klines', params);
-  return rows
+  const out = rows
     .map(candleFromK)
     .filter(k => Number.isFinite(k.openTime) && Number.isFinite(k.closeTime))
     .sort((a,b)=>(a.openTime||0)-(b.openTime||0));
+  state.klineWindowCache.set(winKey, {fetchedAt:Date.now(), startTime:reqStart || (out[0]?.openTime||0), rows:out});
+  return out;
 }
 async function getExchangeInfo(){
   return api('/fapi/v1/exchangeInfo');
@@ -915,7 +1035,7 @@ async function scan(){
     const symbols = await getUniverse();
     const found=[]; let done=0;
     setStatus(`Scan ${symbols.length} symbols ${cfg.interval}. BTC regime: ${state.market.type} · ADX ${fmt(state.market.adx,1)}.`);
-    const concurrency = 5; let idx=0;
+    const concurrency = 2; let idx=0;
     async function worker(){
       while(idx < symbols.length){
         const symbol = symbols[idx++];
@@ -923,7 +1043,7 @@ async function scan(){
           const c = await getKlines(symbol,cfg.interval,220);
           const rows = detectCandidates(symbol,c,state.market);
           found.push(...rows);
-        }catch(e){ console.warn(symbol,e.message); }
+        }catch(e){ console.warn(symbol,e.message); if (e.rateLimited) { idx = symbols.length; setStatus(e.message); break; } }
         done++; setProgress(done/symbols.length*100);
         if (done % 4 === 0) { state.raw = found.slice().sort((a,b)=>b.edgeScore-a.edgeScore).slice(0,500); saveJSON(RAW_STORE,state.raw); render(); }
       }
@@ -942,12 +1062,14 @@ async function scan(){
 async function trackAll(){
   repairAllInvalidTimeOrders(false);
   state.signals.forEach(normalizeActionability);
-  const list = state.signals.filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY');
+  let list = state.signals.filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY');
+  const maxTrack = 35;
+  if (list.length > maxTrack) list = list.slice(0, maxTrack);
   if (!list.length) return setStatus('Không có signal active để track.');
-  setStatus(`Đang forward-track ${list.length} signal bằng nến ${getCfg().trackInterval}...`);
+  setStatus(`Đang forward-track tối đa ${list.length} signal bằng nến ${getCfg().trackInterval} (rate-safe mode)...`);
   let done=0;
   for (const s of list){
-    try{ await trackOne(s); }catch(e){ s.notes = [...(s.notes||[]), `Track error: ${e.message}`]; }
+    try{ await trackOne(s); }catch(e){ s.notes = [...(s.notes||[]), `Track error: ${e.message}`]; if (e.rateLimited) { setStatus(e.message); break; } }
     done++; setProgress(done/list.length*100);
     if (done % 5 === 0) { saveJSON(STORE,state.signals); render(); }
   }
@@ -1123,26 +1245,78 @@ function render(){
   if (state.activeTab==='debug') return renderDebug();
   $('learningView').classList.add('hide'); $('debugView').classList.add('hide'); $('tableView').classList.remove('hide');
   const rows=currentRows();
-  $('tableView').innerHTML = `<table><thead><tr>
+  $('tableView').innerHTML = `<table class="signal-table"><thead><tr>
     <th>Signal</th><th>Bucket / Status</th><th>Playbook</th><th>Prices</th><th>Probabilities</th><th>Edge</th><th>Market</th><th>Actionable</th><th>Quick Order</th><th>Reasons</th><th>Times</th>
   </tr></thead><tbody>${rows.map(rowHTML).join('') || `<tr><td colspan="11" class="muted">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
 }
 function rowHTML(s){
-  return `<tr>
-    <td><a class="symbol" href="${binanceUrl(s.symbol)}" target="_blank" rel="noopener">${s.symbol||'-'}</a><br>
-      <span class="tag ${s.side==='LONG'?'long':'short'}">${s.side||'-'}</span>
-      <div class="mono">${s.id||'-'}</div></td>
-    <td>${bucketTag(s.bucket)}<br><span class="tag ${statusClass(s)}" style="margin-top:5px">${s.status||'-'}</span><br><span class="pill">${s.grade||'-'}</span></td>
-    <td><b>${s.playbook||'-'}</b><br><span class="muted">Dup: ${s.duplicateState||'OK'}</span></td>
-    <td>Entry <b>${fmt(s.entry,8)}</b><br>SL <b class="bad">${fmt(s.sl,8)}</b><br>TP1 <b class="good">${fmt(s.tp1,8)}</b><br>TP2 <b class="${s.tp2Enabled?'good':'muted'}">${s.tp2Enabled?fmt(s.tp2,8):'OFF'}</b></td>
-    <td>Entry Fill <b>${pct(s.entryFillProb)}</b><br>TP1 before SL <b>${pct(s.tp1Prob)}</b><br>TP2 <b>${pct(s.tp2Prob)}</b><br>SL Risk <b class="${(s.slRisk||0)>48?'bad':'muted'}">${pct(s.slRisk)}</b><br>Expired <b>${pct(s.expiredRisk)}</b></td>
-    <td><span class="score ${scoreClass(s.edgeScore)}">${s.edgeScore||0}</span><br>Raw ${s.score||0}<br>EV <b class="${(s.ev||0)>0?'good':'warn'}">${fmt(s.ev,2)}R</b><br>MFE/MAE ${fmt(s.mfe,1)} / ${fmt(s.mae,1)}</td>
-    <td>${s.marketRegime||'-'}<br>ADX ${fmt(s.adx,1)}<br>RSI ${fmt(s.rsi,1)}<br>ATR ${fmt(s.atrPct,2)}%<br>24hVol ${s.symbol24hVolume?fmt(s.symbol24hVolume/1000000,1)+'M':'-'}</td>
-    <td><b class="${manualTradeableForStats(s)?'good':'warn'}">${manualTradeableForStats(s)?'TRADEABLE':'NOT TRADEABLE'}</b><br>${escapeHTML(s.actionStatus||'-')}<br>Detected ${dateFmt(s.detectedAt)}<br>Actionable ${dateFmt(s.actionableAt)}</td>
-    <td>${orderButtonHTML(s)}</td>
-    <td>${(s.reasons||[]).slice(0,7).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('')}</td>
-    <td>Signal ${dateFmt(s.signalTime)}<br>Entry ${dateFmt(s.entryHitTime)}<br>TP1 ${dateFmt(s.tp1HitTime)}<br>Close ${dateFmt(s.closeTime)}</td>
+  const main = `<tr class="signal-main-row">
+    <td><div class="cell-stack"><a class="symbol" href="${binanceUrl(s.symbol)}" target="_blank" rel="noopener">${s.symbol||'-'}</a>
+      <div><span class="tag ${s.side==='LONG'?'long':'short'}">${s.side||'-'}</span> <span class="pill">${s.interval||'-'} / ${s.trackInterval||'-'}</span></div>
+      <div class="mono">${s.id||'-'}</div></div></td>
+    <td><div class="cell-stack">${bucketTag(s.bucket)}<span class="tag ${statusClass(s)}">${s.status||'-'}</span><span class="pill">Grade ${s.grade||'-'}</span><span class="cell-sub">Result: ${escapeHTML(s.result||'-')}</span></div></td>
+    <td><div class="cell-stack"><span class="cell-title">${s.playbook||'-'}</span><span class="cell-sub">Dup: ${escapeHTML(s.duplicateState||'OK')}</span><span class="cell-sub">Key: ${escapeHTML(s.learningKey||'-')}</span></div></td>
+    <td><div class="cell-stack">Entry <b>${fmt(s.entry,8)}</b> SL <b class="bad">${fmt(s.sl,8)}</b> TP1 <b class="good">${fmt(s.tp1,8)}</b> TP2 <b class="${s.tp2Enabled?'good':'muted'}">${s.tp2Enabled?fmt(s.tp2,8):'OFF'}</b></div></td>
+    <td><div class="cell-stack">Entry Fill <b>${pct(s.entryFillProb)}</b> TP1 before SL <b>${pct(s.tp1Prob)}</b> TP2 <b>${pct(s.tp2Prob)}</b> SL Risk <b class="${(s.slRisk||0)>48?'bad':'muted'}">${pct(s.slRisk)}</b> Expired <b>${pct(s.expiredRisk)}</b></div></td>
+    <td><div class="cell-stack"><span class="score ${scoreClass(s.edgeScore)}">${s.edgeScore||0}</span><span>Raw ${s.score||0}</span><span>EV <b class="${(s.ev||0)>0?'good':'warn'}">${fmt(s.ev,2)}R</b></span><span>MFE/MAE ${fmt(s.mfe,1)} / ${fmt(s.mae,1)}</span></div></td>
+    <td><div class="cell-stack"><span>${s.marketRegime||'-'}</span><span>Trend ${s.marketTrend||'-'}</span><span>ADX ${fmt(s.adx,1)} · RSI ${fmt(s.rsi,1)}</span><span>ATR ${fmt(s.atrPct,2)}%</span><span>24hVol ${s.symbol24hVolume?fmt(s.symbol24hVolume/1000000,1)+'M':(s.quoteVolume?fmt(s.quoteVolume/1000000,1)+'M':'-')}</span></div></td>
+    <td><div class="cell-stack"><b class="${manualTradeableForStats(s)?'good':'warn'}">${manualTradeableForStats(s)?'TRADEABLE':'NOT TRADEABLE'}</b><span>${escapeHTML(s.actionStatus||'-')}</span><span>Detected ${dateFmt(s.detectedAt)}</span><span>Actionable ${dateFmt(s.actionableAt)}</span><span>Buffer ${s.humanBufferSec||getCfg().humanBufferSec||'-'}s</span></div></td>
+    <td><div class="cell-stack">${orderButtonHTML(s)}</div></td>
+    <td><div class="detail-list">${(s.reasons||[]).slice(0,10).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '<span class="muted">-</span>'}</div></td>
+    <td><div class="cell-stack"><span>Signal ${dateFmt(s.signalTime)}</span><span>Entry ${dateFmt(s.entryHitTime)}</span><span>TP1 ${dateFmt(s.tp1HitTime)}</span><span>TP2 ${dateFmt(s.tp2HitTime)}</span><span>SL ${dateFmt(s.slHitTime)}</span><span>Close ${dateFmt(s.closeTime)}</span></div></td>
   </tr>`;
+  return main + detailRowHTML(s);
+}
+function detailRowHTML(s){
+  const cfg=getCfg();
+  const notes=(s.notes||[]).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '<span class="muted">Không có note.</span>';
+  const reasons=(s.reasons||[]).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('') || '<span class="muted">Không có reason.</span>';
+  return `<tr class="detail-row"><td colspan="11">
+    <details class="signal-detail">
+      <summary>Chi tiết đầy đủ: ${escapeHTML(s.symbol||'-')} ${escapeHTML(s.side||'-')} · ${escapeHTML(s.playbook||'-')} · ${escapeHTML(s.status||'-')}</summary>
+      <div class="full-detail-grid">
+        <div class="detail-card"><h4>Thông tin signal</h4>
+          <div>ID: <b>${escapeHTML(s.id||'-')}</b></div>
+          <div>PlanKey: <b>${escapeHTML(s.planKey||'-')}</b></div>
+          <div>LearningKey: <b>${escapeHTML(s.learningKey||'-')}</b></div>
+          <div>Bucket: <b>${escapeHTML(s.bucket||'-')}</b> · Grade: <b>${escapeHTML(s.grade||'-')}</b></div>
+          <div>Duplicate: <b>${escapeHTML(s.duplicateState||'OK')}</b></div>
+        </div>
+        <div class="detail-card"><h4>Giá & Risk</h4>
+          <div>Entry: <b>${fmt(s.entry,10)}</b></div><div>SL: <b class="bad">${fmt(s.sl,10)}</b></div>
+          <div>TP1: <b class="good">${fmt(s.tp1,10)}</b></div><div>TP2: <b>${s.tp2Enabled?fmt(s.tp2,10):'OFF'}</b></div>
+          <div>TP1R / TP2R / RR: <b>${fmt(s.tp1R,2)} / ${fmt(s.tp2R,2)} / ${fmt(s.rr,2)}</b></div>
+          <div>Signal price: <b>${fmt(s.signalPrice,10)}</b></div>
+        </div>
+        <div class="detail-card"><h4>Xác suất & Score</h4>
+          <div>Entry Fill: <b>${pct(s.entryFillProb)}</b></div><div>TP1: <b>${pct(s.tp1Prob)}</b></div>
+          <div>TP2: <b>${pct(s.tp2Prob)}</b></div><div>SL Risk: <b>${pct(s.slRisk)}</b></div>
+          <div>Expired: <b>${pct(s.expiredRisk)}</b></div><div>Edge / Raw / Follow: <b>${s.edgeScore||0} / ${s.score||0} / ${s.followScore||0}</b></div>
+          <div>EV: <b>${fmt(s.ev,3)}R</b> · Stability: <b>${fmt(s.stability,1)}</b></div>
+        </div>
+        <div class="detail-card"><h4>Market</h4>
+          <div>Regime: <b>${escapeHTML(s.marketRegime||'-')}</b></div><div>Trend: <b>${escapeHTML(s.marketTrend||'-')}</b></div>
+          <div>ADX: <b>${fmt(s.adx,2)}</b> · RSI: <b>${fmt(s.rsi,2)}</b></div>
+          <div>ATR%: <b>${fmt(s.atrPct,3)}%</b></div><div>VWAP: <b>${fmt(s.vwap,10)}</b></div>
+          <div>EMA20/EMA50: <b>${fmt(s.ema20,10)} / ${fmt(s.ema50,10)}</b></div>
+          <div>Volume: <b>${s.symbol24hVolume?fmt(s.symbol24hVolume,0):fmt(s.quoteVolume,0)}</b></div>
+        </div>
+        <div class="detail-card"><h4>Actionability</h4>
+          <div>Manual: <b class="${manualTradeableForStats(s)?'good':'warn'}">${manualTradeableForStats(s)?'TRADEABLE':'NOT TRADEABLE'}</b></div>
+          <div>Action status: <b>${escapeHTML(s.actionStatus||'-')}</b></div>
+          <div>Human buffer: <b>${s.humanBufferSec||cfg.humanBufferSec||'-'} giây</b></div>
+          <div>Detected: <b>${dateFmt(s.detectedAt)}</b></div><div>Actionable: <b>${dateFmt(s.actionableAt)}</b></div>
+        </div>
+        <div class="detail-card"><h4>Timeline</h4>
+          <div>Signal: <b>${dateFmt(s.signalTime)}</b></div><div>Created: <b>${s.createdAt?new Date(s.createdAt).toLocaleString('vi-VN'):'-'}</b></div>
+          <div>Entry: <b>${dateFmt(s.entryHitTime)}</b></div><div>TP1: <b>${dateFmt(s.tp1HitTime)}</b></div>
+          <div>TP2: <b>${dateFmt(s.tp2HitTime)}</b></div><div>SL: <b>${dateFmt(s.slHitTime)}</b></div><div>Close: <b>${dateFmt(s.closeTime)}</b></div>
+        </div>
+        <div class="detail-card"><h4>Reasons</h4><div class="detail-list">${reasons}</div></div>
+        <div class="detail-card"><h4>Notes</h4><div class="detail-list">${notes}</div></div>
+      </div>
+    </details>
+  </td></tr>`;
 }
 function bucketTag(b){
   if (b==='TRADE_READY') return `<span class="tag tradeTag">TRADE READY</span>`;
@@ -1460,7 +1634,7 @@ async function pullSupabase(){
 
 function startAuto(){
   if(state.autoTimer){ clearInterval(state.autoTimer); state.autoTimer=null; $('autoBtn').textContent='Auto: OFF'; setStatus('Đã tắt Auto.'); return; }
-  state.autoTimer=setInterval(async()=>{ await scan(); await trackAll(); }, Math.max(60000, (+($('scanSec')?.value)||getCfg().scanSec||90)*1000));
+  state.autoTimer=setInterval(async()=>{ await scan(); await trackAll(); }, Math.max(120000, (+($('scanSec')?.value)||getCfg().scanSec||180)*1000));
   $('autoBtn').textContent='Auto: ON'; setStatus('Đã bật Auto: mỗi chu kỳ sẽ Scan + Track + Sync nếu đã login Supabase.');
 }
 
