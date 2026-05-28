@@ -293,7 +293,7 @@
       </div>
 
       <div class="notice">
-        V6.10 giữ Actionability Gate, Risk Quick Order và chỉnh lại UI Full View: chỉ signal Trade Ready còn kịp vào lệnh mới hiện nút Copy Binance Code. Qty/margin/leverage được tính theo Capital, Risk %, min order Binance và max margin/order. Extension chỉ auto-fill form, không tự bấm đặt lệnh.
+        V6.13 giữ Actionability Gate, Risk Quick Order, Card View và Full Forward Track. Bản này thêm Commit Learning Stats + Archive Closed để pull/push nhẹ hơn: closed signal đã học sẽ được gom vào Learning Summary rồi archive, không cần kéo toàn bộ lịch sử mỗi lần mở tool.
       </div>
 
       <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
@@ -310,6 +310,29 @@
           <button id="supaPush" class="secondary">Push Cloud</button>
         </div>
         <button id="supaPull" class="secondary">Pull Cloud</button>
+      </div>
+
+      <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
+      <h2>Archive / Learning Compact</h2>
+      <div class="controls">
+        <div class="row">
+          <label>Archive closed older than hours
+            <input id="archiveOlderHours" type="number" min="0" max="720" step="1" value="24">
+          </label>
+          <label>Keep recent closed local
+            <select id="keepRecentClosed"><option value="ON" selected>ON</option><option value="OFF">OFF</option></select>
+          </label>
+        </div>
+        <div class="row">
+          <button id="commitLearningBtn" class="secondary" onclick="commitLearningStatsUI()">Commit Learning Stats</button>
+          <button id="archiveClosedBtn" class="secondary" onclick="archiveClosedSignalsUI()">Archive Closed</button>
+        </div>
+        <div class="row">
+          <button id="pullLearningBtn" class="secondary" onclick="pullLearningStatsUI()">Pull Learning Summary</button>
+          <button id="pushLearningBtn" class="secondary" onclick="pushLearningStatsUI()">Push Learning Summary</button>
+        </div>
+        <button id="loadArchiveBtn" class="secondary" onclick="loadArchivedSignalsUI()">Load Archive Cloud</button>
+        <div class="muted" style="font-size:12px;margin-top:8px">Khuyến nghị: chạy SQL migration v6.13 trước để Supabase lọc is_archived và lưu learning_stats. Nếu chưa chạy SQL, tool vẫn lưu learning trong local/payload nhưng cloud chưa nhẹ tối đa.</div>
       </div>
 
       <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
@@ -332,6 +355,7 @@
         <div class="mini"><span>TP1 Rate</span><b id="mTp1Rate">0%</b></div>
         <div class="mini"><span>Manual TP1</span><b id="mManualTp1">0%</b></div>
         <div class="mini"><span>Missed / Too Close</span><b id="mMissed">0 / 0</b></div>
+        <div class="mini"><span>Learning / Queue</span><b id="mLearnQueue">0 / 0</b></div>
         <div class="mini"><span>EV Avg</span><b id="mEv">0R</b></div>
       </section>
 
@@ -343,6 +367,7 @@
           <button data-tab="trade">Trade Ready</button>
           <button data-tab="active">Active</button>
           <button data-tab="closed">Closed</button>
+          <button data-tab="archived">Archived Local</button>
           <button data-tab="learning">Learning Stats</button>
           <button data-tab="debug">Debug</button>
         </div>
@@ -364,17 +389,21 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab v6.12 - Card View No Horizontal Scroll + Binance-safe rate limiter + actionable/manual-tradeability + Risk Quick Order Code. Not financial advice. */
+/* FTA v6 Edge Lab v6.13 - Archive + Persistent Learning Summary + Full Forward Track + Risk Quick Order. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
 const CFG_STORE = 'fta_v6_edge_lab_cfg';
 const SUPA_STORE = 'fta_v6_edge_lab_supa';
+const LEARNING_STORE = 'fta_v6_edge_lab_learning_summary_v1';
+const ARCHIVE_QUEUE_STORE = 'fta_v6_edge_lab_archive_queue_v1';
 const SAFE_UNIVERSE = ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT','SUIUSDT','DOGEUSDT','LINKUSDT','BCHUSDT','ADAUSDT','AVAXUSDT','LTCUSDT','DOTUSDT','UNIUSDT','NEARUSDT','WLDUSDT','HYPEUSDT','1000PEPEUSDT','AAVEUSDT','FILUSDT','APTUSDT','ARBUSDT','OPUSDT','INJUSDT','TIAUSDT','SEIUSDT'];
 
 let state = {
   raw: loadJSON(RAW_STORE, []),
   signals: loadJSON(STORE, []),
+  learningStats: loadJSON(LEARNING_STORE, {setup:{}, manual:{}}),
+  archiveQueue: loadJSON(ARCHIVE_QUEUE_STORE, []),
   cfg: loadJSON(CFG_STORE, {}),
   market: null,
   activeTab: 'raw',
@@ -1159,6 +1188,8 @@ async function trackAll(){
   }
 
   saveJSON(STORE,state.signals);
+  saveLearningStats();
+  saveArchiveQueue();
   render();
   setStatus(`Track xong ${Math.min(doneSignals,totalSignals)}/${totalSignals} signal active qua ${doneGroups}/${groupEntries.length} nhóm symbol. Learning stats đã cập nhật theo outcome mới.`);
   scheduleCloudSync('track');
@@ -1799,11 +1830,413 @@ function startAuto(){
   $('autoBtn').textContent='Auto: ON'; setStatus('Đã bật Auto: mỗi chu kỳ sẽ Scan + Track + Sync nếu đã login Supabase.');
 }
 
+
+
+/* =========================
+   v6.13 Persistent Learning + Archive layer
+   ========================= */
+function ensureLearningShape(){
+  if (!state.learningStats || typeof state.learningStats !== 'object') state.learningStats = {setup:{}, manual:{}};
+  if (!state.learningStats.setup) state.learningStats.setup = {};
+  if (!state.learningStats.manual) state.learningStats.manual = {};
+  if (!Array.isArray(state.archiveQueue)) state.archiveQueue = [];
+}
+function saveLearningStats(){ ensureLearningShape(); saveJSON(LEARNING_STORE, state.learningStats); }
+function saveArchiveQueue(){ saveJSON(ARCHIVE_QUEUE_STORE, state.archiveQueue || []); }
+function emptyLearningStat(key){ return {key,n:0,tp1:0,tp2:0,loss:0,weak:0,noEntry:0,expired:0,missed:0,tooClose:0,evSum:0,entryFill:0,manualN:0}; }
+function cloneLearningStat(x){ return {...emptyLearningStat(x?.key||''), ...(x||{})}; }
+function addSignalToLearningMap(target, key, s, w=1, mode='setup'){
+  if (!key || w <= 0) return;
+  if (!target[key]) target[key] = emptyLearningStat(key);
+  const x = target[key];
+  x.key = key;
+  x.n = (+x.n||0) + w;
+  if (mode === 'manual') x.manualN = (+x.manualN||0) + w;
+  if (s.entryHitTime) x.entryFill = (+x.entryFill||0) + w;
+  if (isTp1(s)) x.tp1 = (+x.tp1||0) + w;
+  if (isTp2(s)) x.tp2 = (+x.tp2||0) + w;
+  if (isLoss(s)) x.loss = (+x.loss||0) + w;
+  if (isWeak(s)) x.weak = (+x.weak||0) + w;
+  if (resultKind(s)==='NO_ENTRY') x.noEntry = (+x.noEntry||0) + w;
+  if (resultKind(s)==='MISSED') x.missed = (+x.missed||0) + w;
+  if (resultKind(s)==='TOO_CLOSE') x.tooClose = (+x.tooClose||0) + w;
+  if (String(s.status||s.result||'').includes('EXPIRED')) x.expired = (+x.expired||0) + w;
+  x.evSum = (+x.evSum||0) + (Number.isFinite(+s.ev) ? +s.ev : 0)*w;
+}
+function addSignalToLearningSummary(s){
+  ensureLearningShape();
+  if (invalidTimeOrderReason(s) || !statusClosed(s)) return false;
+  const mk={type:s.marketRegime||'UNKNOWN'};
+  const keys=learningKeys({symbol:s.symbol,side:s.side,playbook:s.playbook,market:mk});
+  Object.values(keys).forEach(k=>addSignalToLearningMap(state.learningStats.setup,k,s,1,'setup'));
+  if (manualTradeableForStats(s)) {
+    const w = duplicateWeight(s);
+    Object.values(keys).forEach(k=>addSignalToLearningMap(state.learningStats.manual,k,s,w,'manual'));
+  }
+  s.learningCommitted = true;
+  s.learningCommittedAt = new Date().toISOString();
+  return true;
+}
+function commitLearningStats(show=true){
+  ensureLearningShape();
+  let committed=0, skipped=0;
+  for (const s of state.signals) {
+    if (s.learningCommitted) continue;
+    if (!statusClosed(s)) { skipped++; continue; }
+    if (addSignalToLearningSummary(s)) committed++; else skipped++;
+  }
+  saveLearningStats();
+  saveJSON(STORE,state.signals);
+  if (show) setStatus(`Commit Learning Stats xong: ${committed} closed signal mới đã cộng vào summary. Bỏ qua ${skipped}.`);
+  render();
+  return committed;
+}
+function commitLearningStatsUI(){ commitLearningStats(true); scheduleCloudSync('learning-commit'); }
+function activeLocalSignals(){ return state.signals.filter(s=>!s.isArchived); }
+function visibleSignalsForStats(){ return activeLocalSignals(); }
+function archiveClosedSignals(show=true){
+  ensureLearningShape();
+  const olderHours = Math.max(0, +($('archiveOlderHours')?.value || 24));
+  const keepRecent = ($('keepRecentClosed')?.value || 'ON') === 'ON';
+  const cutoff = Date.now() - olderHours*3600000;
+  const before = state.signals.length;
+  let archived=0, committed=0;
+  const kept=[];
+  const queued = new Map((state.archiveQueue||[]).map(s=>[s.id,s]));
+  for (const s of state.signals) {
+    const closed = statusClosed(s) && !invalidTimeOrderReason(s);
+    const closedAt = +s.closeTime || Date.parse(s.lastCheckedAt||s.createdAt||'') || +s.signalTime || 0;
+    const tooRecent = keepRecent && closedAt && closedAt > cutoff;
+    if (!closed || tooRecent) { kept.push(s); continue; }
+    if (!s.learningCommitted) { if (addSignalToLearningSummary(s)) committed++; }
+    s.isArchived = true;
+    s.archivedAt = new Date().toISOString();
+    queued.set(s.id, {...s});
+    archived++;
+  }
+  state.archiveQueue = Array.from(queued.values()).slice(-2000);
+  state.signals = kept.sort((a,b)=>(b.signalTime||0)-(a.signalTime||0));
+  saveLearningStats(); saveArchiveQueue(); saveJSON(STORE,state.signals);
+  if (show) setStatus(`Archive Closed xong: archived ${archived}/${before}, commit learning mới ${committed}. Local còn ${state.signals.length}. Archive queue cloud: ${state.archiveQueue.length}.`);
+  render();
+  if (archived) scheduleCloudSync('archive');
+  return archived;
+}
+function archiveClosedSignalsUI(){ archiveClosedSignals(true); }
+function learningSummaryToMap(mode='setup'){
+  ensureLearningShape();
+  const out = new Map();
+  const src = state.learningStats?.[mode] || {};
+  for (const [key,val] of Object.entries(src)) out.set(key, cloneLearningStat({...val,key}));
+  return out;
+}
+/* Override computeLearning: persistent summary + only uncommitted closed local signals. */
+function computeLearning(mode='setup'){
+  const stats = learningSummaryToMap(mode);
+  const addLocal = (key,s,w=1) => {
+    if (!key || w<=0) return;
+    if (!stats.has(key)) stats.set(key, emptyLearningStat(key));
+    addSignalToLearningMap(Object.fromEntries(stats), key, s, w, mode); // not used; retained for compatibility
+  };
+  // Faster direct add into Map.
+  const add = (key,s,w=1) => {
+    if (!key || w<=0) return;
+    if (!stats.has(key)) stats.set(key, emptyLearningStat(key));
+    const obj = stats.get(key);
+    const tmp = {[key]: obj};
+    addSignalToLearningMap(tmp,key,s,w,mode);
+    stats.set(key,tmp[key]);
+  };
+  for (const s of state.signals) {
+    if (s.learningCommitted) continue;
+    if (invalidTimeOrderReason(s)) continue;
+    if (!statusClosed(s)) continue;
+    if (mode==='manual' && !manualTradeableForStats(s)) continue;
+    const w = mode==='manual' ? duplicateWeight(s) : 1;
+    const mk={type:s.marketRegime||'UNKNOWN'};
+    const keys=learningKeys({symbol:s.symbol,side:s.side,playbook:s.playbook,market:mk});
+    Object.values(keys).forEach(k=>add(k,s,w));
+  }
+  return stats;
+}
+function learningRowsForSupabase(){
+  ensureLearningShape();
+  const rows=[];
+  for (const mode of ['setup','manual']) {
+    for (const [key,s0] of Object.entries(state.learningStats[mode]||{})) {
+      const s=cloneLearningStat({...s0,key});
+      const parts=key.split('|');
+      rows.push({
+        id:`${mode}:${hash(key)}`,
+        mode,
+        learning_key:key,
+        symbol:parts[0] && !['LONG','SHORT','ALL'].includes(parts[0]) ? parts[0] : null,
+        side:parts.includes('LONG')?'LONG':parts.includes('SHORT')?'SHORT':null,
+        playbook:['TREND_PULLBACK','BREAKOUT_CONTINUATION','REVERSAL_SWEEP','RANGE_SCALP'].find(p=>parts.includes(p)) || null,
+        market_regime:parts.find(p=>/^BTC_/.test(p)) || null,
+        total:s.n||0,
+        tp1_count:s.tp1||0,
+        tp2_count:s.tp2||0,
+        loss_count:s.loss||0,
+        weak_count:s.weak||0,
+        no_entry_count:s.noEntry||0,
+        expired_count:s.expired||0,
+        missed_entry_count:s.missed||0,
+        too_close_count:s.tooClose||0,
+        manual_total: mode==='manual' ? (s.n||0) : 0,
+        manual_win_count: mode==='manual' ? (s.tp1||0) : 0,
+        manual_loss_count: mode==='manual' ? (s.loss||0) : 0,
+        ev_sum:s.evSum||0,
+        entry_fill_sum:s.entryFill||0,
+        payload:s,
+        updated_at:new Date().toISOString()
+      });
+    }
+  }
+  return rows;
+}
+async function pushLearningStatsUI(){ await pushLearningStats(true); }
+async function pullLearningStatsUI(){ await pullLearningStats(true); render(); }
+async function pushLearningStats(show=false){
+  const rows=learningRowsForSupabase();
+  if (!rows.length) { if(show) setStatus('Learning summary trống, chưa có gì để push.'); return; }
+  const c=state.supabaseClient || initSupabase();
+  const session=await ensureSupaSession();
+  if(!c || !session) { if(show) setStatus('Chưa login Supabase để push learning_stats.'); return; }
+  try{
+    if(show) setStatus(`Đang push learning_stats ${rows.length} dòng...`);
+    for(let i=0;i<rows.length;i+=100){
+      const part=rows.slice(i,i+100);
+      const {error}=await withTimeout(c.from('learning_stats').upsert(part,{onConflict:'id'}), 20000, 'Push learning_stats');
+      if(error) throw error;
+    }
+    if(show) setStatus(`Push learning_stats xong: ${rows.length} dòng.`);
+  }catch(e){
+    if(show) setStatus('Push learning_stats lỗi. Có thể bạn chưa chạy SQL migration v6.13: '+(e.message||e));
+    console.warn('pushLearningStats', e);
+  }
+}
+async function pullLearningStats(show=false){
+  const c=state.supabaseClient || initSupabase();
+  const session=await ensureSupaSession();
+  if(!c || !session) { if(show) setStatus('Chưa login Supabase để pull learning_stats.'); return; }
+  try{
+    if(show) setStatus('Đang pull learning_stats...');
+    const {data,error}=await withTimeout(c.from('learning_stats').select('*').limit(5000), 30000, 'Pull learning_stats');
+    if(error) throw error;
+    ensureLearningShape();
+    for (const row of data||[]) {
+      const mode=row.mode || (String(row.id||'').startsWith('manual:')?'manual':'setup');
+      if (!state.learningStats[mode]) state.learningStats[mode]={};
+      const key=row.learning_key;
+      if (!key) continue;
+      state.learningStats[mode][key] = {
+        key,
+        n:+row.total||0,
+        tp1:+row.tp1_count||0,
+        tp2:+row.tp2_count||0,
+        loss:+row.loss_count||0,
+        weak:+row.weak_count||0,
+        noEntry:+row.no_entry_count||0,
+        expired:+row.expired_count||0,
+        missed:+row.missed_entry_count||0,
+        tooClose:+row.too_close_count||0,
+        evSum:+row.ev_sum||0,
+        entryFill:+row.entry_fill_sum||0,
+        manualN:+row.manual_total||0
+      };
+    }
+    saveLearningStats();
+    if(show) setStatus(`Pull learning_stats xong: ${data?.length||0} dòng.`);
+  }catch(e){
+    if(show) setStatus('Pull learning_stats lỗi. Có thể bạn chưa chạy SQL migration v6.13: '+(e.message||e));
+    console.warn('pullLearningStats', e);
+  }
+}
+function mapSignalToBaseRow(s){
+  return {id:s.id, symbol:s.symbol, side:s.side, status:s.status, interval:s.interval, score:s.edgeScore||s.score, signal_time:new Date(s.signalTime||Date.now()).toISOString(), updated_at:new Date().toISOString(), payload:{...s,__cloudUpdatedAt:new Date().toISOString()}};
+}
+function mapSignalToRow(s){
+  const base=mapSignalToBaseRow(s);
+  return {...base,
+    bucket:s.bucket||null,
+    playbook:s.playbook||null,
+    market_regime:s.marketRegime||null,
+    action_status:s.actionStatus||null,
+    manual_tradeable:s.manualTradeable ?? null,
+    detected_at:s.detectedAt?new Date(+s.detectedAt).toISOString():null,
+    actionable_at:s.actionableAt?new Date(+s.actionableAt).toISOString():null,
+    entry_hit_time:s.entryHitTime?new Date(+s.entryHitTime).toISOString():null,
+    tp1_hit_time:s.tp1HitTime?new Date(+s.tp1HitTime).toISOString():null,
+    tp2_hit_time:s.tp2HitTime?new Date(+s.tp2HitTime).toISOString():null,
+    sl_hit_time:s.slHitTime?new Date(+s.slHitTime).toISOString():null,
+    result:s.result||null,
+    is_archived:!!s.isArchived,
+    learning_committed:!!s.learningCommitted,
+    archived_at:s.archivedAt||null
+  };
+}
+async function upsertSignalRows(c, signals, label='Push signals'){
+  const fullRows=signals.map(mapSignalToRow);
+  try{
+    const {error}=await withTimeout(c.from('signals').upsert(fullRows,{onConflict:'id'}), 25000, label);
+    if(error) throw error;
+    return {enhanced:true,count:fullRows.length};
+  }catch(e){
+    console.warn('Enhanced signals upsert failed, fallback base schema:', e);
+    const baseRows=signals.map(mapSignalToBaseRow);
+    const {error}=await withTimeout(c.from('signals').upsert(baseRows,{onConflict:'id'}), 25000, label+' fallback');
+    if(error) throw error;
+    return {enhanced:false,count:baseRows.length};
+  }
+}
+async function pushSupabase(show=true){
+  if(state.cloudBusy) { state.pendingCloudSync = true; if(show) setStatus('Cloud đang xử lý, đã xếp lịch push lại sau khi xong.'); return; }
+  const c=state.supabaseClient || initSupabase();
+  if(!c) { if(show) setStatus('Thiếu Supabase URL/key hoặc chưa tải được thư viện Supabase.'); return; }
+  state.cloudBusy=true; state.lastCloudError=null;
+  try{
+    const session = await ensureSupaSession();
+    if(!session) { if(show) setStatus('Chưa login Supabase. Hãy bấm Login + Pull trước.'); return; }
+    const activeRows = state.signals.filter(s=>!s.isArchived).slice(0,1500);
+    const archiveRows = state.archiveQueue || [];
+    const rows=[...activeRows, ...archiveRows];
+    if(!rows.length){ if(show) setStatus('Không có signal để Push Cloud.'); return; }
+    const batchSize = 100; const total=rows.length; let enhanced=null;
+    if(show) setStatus(`Đang Push Cloud ${total} signals (${activeRows.length} active + ${archiveRows.length} archive updates)...`);
+    else setStatus(`Đang sync cloud nền ${total} signals...`);
+    for(let i=0;i<total;i+=batchSize){
+      const part=rows.slice(i,i+batchSize);
+      const res=await upsertSignalRows(c, part, `Push Supabase batch ${Math.floor(i/batchSize)+1}/${Math.ceil(total/batchSize)}`);
+      enhanced = res.enhanced;
+      if(show) setStatus(`Push Cloud ${Math.min(i+part.length,total)}/${total} signals${enhanced?'':' (base schema fallback)'}...`);
+    }
+    if (archiveRows.length && enhanced) { state.archiveQueue=[]; saveArchiveQueue(); }
+    await pushLearningStats(false);
+    setStatus(show ? `Push cloud xong: ${total} signals. Archive queue còn ${state.archiveQueue.length}.` : `Sync cloud nền xong: ${total} signals.`);
+  }catch(e){ state.lastCloudError=e.message||String(e); setStatus((show?'Push cloud lỗi: ':'Sync cloud nền lỗi: ')+state.lastCloudError); console.warn(e); }
+  finally{
+    state.cloudBusy=false;
+    if(state.pendingCloudSync){ state.pendingCloudSync=false; setTimeout(()=>{ pushSupabase(false).catch(e=>console.warn('Queued push lỗi:', e)); },1500); }
+  }
+}
+function rowToSignal(row){
+  const s = row.payload ? {...row.payload,__cloudUpdatedAt:row.updated_at} : row;
+  if ('is_archived' in row) s.isArchived = !!row.is_archived;
+  if ('learning_committed' in row) s.learningCommitted = !!row.learning_committed;
+  if (row.archived_at) s.archivedAt = row.archived_at;
+  return s;
+}
+async function pullSignalRows(c){
+  const recentIso=new Date(Date.now()-3*24*3600000).toISOString();
+  try{
+    return await withTimeout(
+      c.from('signals').select('id, updated_at, payload, signal_time, is_archived, learning_committed, archived_at').or(`is_archived.eq.false,signal_time.gte.${recentIso}`).order('signal_time',{ascending:false}).limit(1500),
+      30000,
+      'Pull Supabase enhanced'
+    );
+  }catch(e){
+    console.warn('Enhanced pull failed, fallback base schema:', e);
+    return await withTimeout(
+      c.from('signals').select('id, updated_at, payload, signal_time').order('signal_time',{ascending:false}).limit(1000),
+      30000,
+      'Pull Supabase fallback'
+    );
+  }
+}
+async function pullSupabase(){
+  if(state.cloudBusy) return setStatus('Cloud đang xử lý, chờ xong rồi bấm lại.');
+  const c=state.supabaseClient || initSupabase();
+  const session = await ensureSupaSession();
+  if(!c || !session) return setStatus('Chưa login Supabase. Hãy nhập URL/key/email/password rồi bấm Login + Pull.');
+  state.cloudBusy=true;
+  try{
+    setStatus('Đang Pull Cloud: lấy active + closed gần đây + learning summary...');
+    await pullLearningStats(false);
+    const {data,error}=await pullSignalRows(c);
+    if(error) throw error;
+    setStatus(`Đã nhận ${data?.length||0} dòng cloud. Đang merge + repair...`);
+    const map=new Map(state.signals.filter(s=>!s.isArchived).map(s=>[s.id,s]));
+    for(const row of data||[]){
+      const cloud=rowToSignal(row);
+      if (cloud.isArchived) continue;
+      const local=map.get(cloud.id);
+      const ct=Date.parse(cloud.__cloudUpdatedAt || row.updated_at || 0), lt=Date.parse(local?.__cloudUpdatedAt || local?.lastCheckedAt || local?.createdAt || 0);
+      if(!local || ct>=lt) map.set(cloud.id,cloud);
+    }
+    state.signals=Array.from(map.values()).filter(s=>!s.isArchived).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1500);
+    const fixed = repairAllInvalidTimeOrders(false);
+    state.signals.forEach(normalizeActionability);
+    saveJSON(STORE,state.signals); render(); setStatus(`Pull cloud xong: ${data?.length||0} dòng active/recent, local hiện có ${state.signals.length}, learning keys: ${Object.keys(state.learningStats.setup||{}).length + Object.keys(state.learningStats.manual||{}).length}${fixed?`, đã sửa ${fixed} lỗi time-order`:''}.`);
+  }catch(e){ console.warn('Pull Supabase lỗi:', e); setStatus('Pull Supabase lỗi: '+(e.message||e)); }
+  finally{ state.cloudBusy=false; }
+}
+async function loadArchivedSignalsUI(){
+  const c=state.supabaseClient || initSupabase(); const session=await ensureSupaSession();
+  if(!c || !session) return setStatus('Chưa login Supabase để load archive.');
+  try{
+    setStatus('Đang load archived signals từ cloud...');
+    const {data,error}=await withTimeout(c.from('signals').select('id, updated_at, payload, signal_time, is_archived, learning_committed, archived_at').eq('is_archived',true).order('signal_time',{ascending:false}).limit(300), 30000, 'Load archive');
+    if(error) throw error;
+    const map=new Map(state.signals.map(s=>[s.id,s]));
+    for (const row of data||[]) map.set(row.id,rowToSignal(row));
+    state.signals=Array.from(map.values()).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1800);
+    saveJSON(STORE,state.signals); render(); setStatus(`Đã load ${data?.length||0} archived signals vào local. Tab Archived Local sẽ hiển thị.`);
+  }catch(e){ setStatus('Load archive lỗi. Có thể chưa chạy SQL migration v6.13: '+(e.message||e)); console.warn(e); }
+}
+function currentRows(){
+  const q=$('search').value.trim().toUpperCase(), tab=state.activeTab;
+  let rows = tab==='raw' ? state.raw : state.signals.filter(s=>!s.isArchived);
+  if (tab==='archived') rows = state.signals.filter(s=>s.isArchived);
+  if (tab==='shadow') rows = rows.filter(s=>s.bucket==='SHADOW_TEST');
+  if (tab==='forward') rows = rows.filter(s=>s.bucket==='FORWARD_TEST');
+  if (tab==='trade') rows = rows.filter(s=>s.bucket==='TRADE_READY');
+  if (tab==='active') rows = rows.filter(statusOpen);
+  if (tab==='closed') rows = rows.filter(statusClosed);
+  if (q) rows = rows.filter(s => [s.symbol,s.side,s.playbook,s.status,s.bucket,s.marketRegime,s.actionStatus].some(v=>String(v||'').toUpperCase().includes(q)));
+  const sort=$('sortBy').value;
+  return rows.slice().sort((a,b)=>{
+    if (sort==='tp1') return (b.tp1Prob||0)-(a.tp1Prob||0);
+    if (sort==='time') return (b.signalTime||0)-(a.signalTime||0);
+    if (sort==='ev') return (b.ev||0)-(a.ev||0);
+    return (b.edgeScore||0)-(a.edgeScore||0);
+  });
+}
+function renderMetrics(){
+  repairAllInvalidTimeOrders(false);
+  state.signals.forEach(normalizeActionability);
+  const sig=state.signals.filter(s=>!s.isArchived), closed=sig.filter(s=>!invalidTimeOrderReason(s) && statusClosed(s)), manualClosed=closed.filter(manualTradeableForStats), evs=manualClosed.map(s=>+s.ev).filter(Number.isFinite);
+  $('mRaw').textContent=state.raw.length;
+  $('mShadow').textContent=sig.filter(s=>s.bucket==='SHADOW_TEST' && statusOpen(s)).length;
+  $('mForward').textContent=sig.filter(s=>s.bucket==='FORWARD_TEST' && statusOpen(s)).length;
+  $('mTrade').textContent=sig.filter(s=>s.bucket==='TRADE_READY' && statusOpen(s)).length;
+  $('mWin').textContent=`${sig.filter(isTp2).length} / ${sig.filter(s=>isTp1(s)&&!isTp2(s)).length}`;
+  $('mLoss').textContent=`${sig.filter(isLoss).length} / ${sig.filter(isWeak).length}`;
+  $('mTp1Rate').textContent=closed.length ? pct(closed.filter(isTp1).length/closed.length*100,1) : '0%';
+  if ($('mManualTp1')) $('mManualTp1').textContent=manualClosed.length ? pct(manualClosed.filter(isTp1).length/manualClosed.length*100,1) : '0%';
+  if ($('mMissed')) $('mMissed').textContent=`${sig.filter(s=>String(s.actionStatus||s.status||s.result||'').includes('MISSED')).length} / ${sig.filter(s=>String(s.actionStatus||'').includes('TOO_CLOSE')).length}`;
+  if ($('mLearnQueue')) $('mLearnQueue').textContent=`${Object.keys(state.learningStats?.setup||{}).length + Object.keys(state.learningStats?.manual||{}).length} / ${(state.archiveQueue||[]).length}`;
+  $('mEv').textContent=Number.isFinite(mean(evs)) ? `${mean(evs).toFixed(2)}R` : '0R';
+}
+function exportJSON(){
+  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB_V6_13_ARCHIVE_LEARNING', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals, learningStats:state.learningStats, archiveQueue:state.archiveQueue},null,2)], {type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`fta-v6-edge-lab-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
+}
+async function importJSON(file){
+  const txt=await file.text(); const data=JSON.parse(txt);
+  if (Array.isArray(data)) state.signals=data;
+  else { if (Array.isArray(data.raw)) state.raw=data.raw; if (Array.isArray(data.signals)) state.signals=data.signals; if (data.learningStats) state.learningStats=data.learningStats; if (Array.isArray(data.archiveQueue)) state.archiveQueue=data.archiveQueue; if (data.cfg) applyCfg(data.cfg); }
+  ensureLearningShape();
+  const fixed = repairAllInvalidTimeOrders(false);
+  state.signals.forEach(normalizeActionability);
+  saveJSON(RAW_STORE,state.raw); saveJSON(STORE,state.signals); saveLearningStats(); saveArchiveQueue(); saveCfg(); render(); setStatus(`Import JSON xong${fixed?`, đã sửa ${fixed} signal lỗi time-order`:''}.`);
+}
 document.addEventListener('DOMContentLoaded', ()=>{
   const bindClick = (id, fn) => { const el=$(id); if(el) el.onclick=fn; else console.warn('Missing button:', id); };
   const bindChange = (id, fn) => { const el=$(id); if(el) el.onchange=fn; else console.warn('Missing input:', id); };
   const bindInput = (id, fn) => { const el=$(id); if(el) el.oninput=fn; else console.warn('Missing input:', id); };
 
+  ensureLearningShape();
   applyCfg(state.cfg);
   const sup=supaSettings();
   if(sup.url && $('supaUrl')) $('supaUrl').value=sup.url;
