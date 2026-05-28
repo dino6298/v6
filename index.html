@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>FTA v6 Edge Lab - Outcome Driven Futures Assistant</title>
+  <title>FTA v6 Edge Lab v6.6 - Actionable Signal Engine</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root{
@@ -86,7 +86,7 @@
 <div class="wrap">
   <header>
     <div>
-      <h1>FTA v6 Edge Lab</h1>
+      <h1>FTA v6 Edge Lab v6.6</h1>
       <div class="sub">
         Outcome-driven futures assistant: scan rộng để thu thập mẫu, tự đưa tín hiệu vào Shadow/Forward Test,
         học xác suất Entry Fill / TP1 before SL / TP2 / Expired Risk, rồi mới nâng cấp tín hiệu lên Trade Ready.
@@ -141,6 +141,18 @@
           <label>Trade TP1% min <input id="tradeTp1" type="number" min="0" max="100" value="58"></label>
         </div>
         <div class="row">
+          <label>Human buffer giây <input id="humanBufferSec" type="number" min="0" max="600" value="120"></label>
+          <label>Auto scan giây <input id="scanSec" type="number" min="60" max="1800" value="90"></label>
+        </div>
+        <div class="row">
+          <label>Early Signal
+            <select id="earlyMode"><option value="ON" selected>ON - dùng nến đang chạy</option><option value="OFF">OFF - chỉ nến đóng</option></select>
+          </label>
+          <label>Manual Gate
+            <select id="manualGate"><option value="STRICT" selected>STRICT</option><option value="BALANCED">BALANCED</option><option value="RESEARCH">RESEARCH</option></select>
+          </label>
+        </div>
+        <div class="row">
           <label>Side
             <select id="sideMode"><option value="BOTH" selected>LONG + SHORT</option><option>LONG</option><option>SHORT</option></select>
           </label>
@@ -167,7 +179,7 @@
       </div>
 
       <div class="notice">
-        V6 không hard-block learning ở tầng scan. Signal yếu vẫn được Shadow Test để học. Chỉ tầng Trade Ready mới lọc chặt.
+        V6.6 thêm Actionability Gate: signal đã chạm Entry trước khi tool phát hiện, hoặc Entry quá sát không đủ thời gian phản ứng, sẽ bị hạ xuống Shadow/Missed và không tính vào Manual Winrate.
       </div>
 
       <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
@@ -204,6 +216,8 @@
         <div class="mini"><span>TP2 / TP1</span><b id="mWin">0 / 0</b></div>
         <div class="mini"><span>Loss / Weak</span><b id="mLoss">0 / 0</b></div>
         <div class="mini"><span>TP1 Rate</span><b id="mTp1Rate">0%</b></div>
+        <div class="mini"><span>Manual TP1</span><b id="mManualTp1">0%</b></div>
+        <div class="mini"><span>Missed / Too Close</span><b id="mMissed">0 / 0</b></div>
         <div class="mini"><span>EV Avg</span><b id="mEv">0R</b></div>
       </section>
 
@@ -236,7 +250,7 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab v5 - non-blocking cloud sync. Not financial advice. */
+/* FTA v6 Edge Lab v6.6 - actionable/manual-tradeability engine. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
@@ -255,7 +269,8 @@ let state = {
   supabaseSession: null,
   cloudBusy: false,
   pendingCloudSync: false,
-  lastCloudError: null
+  lastCloudError: null,
+  volume24h: {}
 };
 let memoryCache = new Map();
 
@@ -269,8 +284,8 @@ function now(){ return Date.now(); }
 function setStatus(msg){ $('status').textContent = msg; }
 function setProgress(p){ $('progressBar').style.width = `${clamp(p,0,100)}%`; }
 function binanceUrl(symbol){ return `https://www.binance.com/en/futures/${symbol}`; }
-function statusOpen(s){ return ['WAIT_ENTRY','ENTRY_FILLED','TP1_HIT','NEW','OPEN'].includes(s.status); }
-function statusClosed(s){ return ['TP2_WIN','TP1_ONLY','LOSS','EXPIRED_NO_ENTRY','EXPIRED_AFTER_ENTRY_NO_TP1','EXPIRED_AFTER_TP1_NO_TP2','INVALIDATED'].includes(s.status) || s.result; }
+function statusOpen(s){ return ['PRE_SIGNAL','ARMED_WAIT_ENTRY','WAIT_ENTRY','ENTRY_FILLED','TP1_HIT','NEW','OPEN'].includes(s.status); }
+function statusClosed(s){ return ['TP2_WIN','TP1_ONLY','LOSS','EXPIRED_NO_ENTRY','EXPIRED_AFTER_ENTRY_NO_TP1','EXPIRED_AFTER_TP1_NO_TP2','INVALIDATED','MISSED_ENTRY','LATE_SIGNAL','TP_ALREADY_TOUCHED_BEFORE_ENTRY'].includes(s.status) || ['MISSED_ENTRY','LATE_SIGNAL','TP_ALREADY_TOUCHED_BEFORE_ENTRY'].includes(s.result) || (!!s.result && s.status!=='WAIT_ENTRY' && s.status!=='ENTRY_FILLED'); }
 function isTp2(s){ return ['TP2_WIN','TP2_HIT','TP2_HIT_FULL_WIN'].includes(s.status) || ['TP2_WIN','TP2_HIT','TP2_HIT_FULL_WIN'].includes(s.result); }
 function isTp1(s){ return isTp2(s) || ['TP1_ONLY','TP1_HIT','TP1_THEN_SL','EXPIRED_AFTER_TP1_NO_TP2'].includes(s.status) || ['TP1_ONLY','TP1_HIT','TP1_THEN_SL','EXPIRED_AFTER_TP1_NO_TP2'].includes(s.result); }
 function isLoss(s){ return s.status === 'LOSS' || s.result === 'LOSS'; }
@@ -281,13 +296,15 @@ function resultKind(s){
   if (isWeak(s)) return 'WEAK';
   if (isTp1(s)) return 'TP1';
   if (s.status === 'EXPIRED_NO_ENTRY' || s.result === 'EXPIRED_NO_ENTRY') return 'NO_ENTRY';
+  if (String(s.actionStatus||s.status||s.result||'').includes('MISSED')) return 'MISSED';
+  if (String(s.actionStatus||'').includes('ENTRY_TOO_CLOSE')) return 'TOO_CLOSE';
   return statusOpen(s) ? 'ACTIVE' : 'OTHER';
 }
 
 const PRESETS = {
-  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:60, topN:35, minVol:30000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL'},
-  BALANCED:{minRaw:50, forwardTp1:42, tradeTp1:58, topN:28, minVol:50000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL'},
-  TRADE:{minRaw:58, forwardTp1:48, tradeTp1:62, topN:20, minVol:80000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK'}
+  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:65, topN:35, minVol:30000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'RESEARCH'},
+  BALANCED:{minRaw:50, forwardTp1:45, tradeTp1:66, topN:28, minVol:50000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'BALANCED'},
+  TRADE:{minRaw:60, forwardTp1:52, tradeTp1:70, topN:20, minVol:80000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK', humanBufferSec:150, scanSec:60, earlyMode:'ON', manualGate:'STRICT'}
 };
 
 function getCfg(){
@@ -301,6 +318,10 @@ function getCfg(){
     forwardTp1:+$('forwardTp1').value || 40,
     tradeTp1:+$('tradeTp1').value || 58,
     expireHours:+$('expireHours').value || 5,
+    humanBufferSec:+($('humanBufferSec')?.value || 120),
+    scanSec:+($('scanSec')?.value || 90),
+    earlyMode:$('earlyMode')?.value || 'ON',
+    manualGate:$('manualGate')?.value || 'STRICT',
     sideMode:$('sideMode').value,
     playbookMode:$('playbookMode').value,
     symbols:$('symbols').value.trim(),
@@ -309,7 +330,7 @@ function getCfg(){
   };
 }
 function applyCfg(cfg={}){
-  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', ...cfg};
+  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', humanBufferSec:120, scanSec:90, earlyMode:'ON', manualGate:'STRICT', ...cfg};
   for (const [k,v] of Object.entries(merged)) if ($(k)) $(k).value = v;
 }
 function saveCfg(){ state.cfg = getCfg(); saveJSON(CFG_STORE, state.cfg); setStatus('Đã lưu config local.'); }
@@ -351,9 +372,12 @@ async function getKlines(symbol, interval, limit=220, startTime){
 }
 async function getUniverse(){
   const cfg = getCfg();
-  if (cfg.symbols) return cfg.symbols.split(/[,\n\s]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
   try {
     const tickers = await api('/fapi/v1/ticker/24hr');
+    state.volume24h = Object.fromEntries(tickers.filter(t=>t.symbol).map(t=>[t.symbol,+t.quoteVolume||0]));
+    if (cfg.symbols) {
+      return cfg.symbols.split(/[,\n\s]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
+    }
     return tickers
       .filter(t => t.symbol.endsWith('USDT') && !t.symbol.includes('_') && +t.quoteVolume >= cfg.minVol)
       .sort((a,b)=>+b.quoteVolume-+a.quoteVolume)
@@ -361,6 +385,8 @@ async function getUniverse(){
       .map(t=>t.symbol);
   } catch(e) {
     setStatus(`Không lấy được universe Binance, dùng Safe Universe. Lý do: ${e.message}`);
+    state.volume24h = {};
+    if (cfg.symbols) return cfg.symbols.split(/[,\n\s]+/).map(x=>x.trim().toUpperCase()).filter(Boolean);
     return SAFE_UNIVERSE.slice(0,cfg.topN);
   }
 }
@@ -439,13 +465,25 @@ function marketRegimeFrom(c){
   return {type:bull?'BTC_BULL':bear?'BTC_BEAR':'BTC_RANGE', trend, adx:e.adx[i], change1h:(last.close/c[Math.max(0,i-4)].close-1)*100, ts:Date.now()};
 }
 
+function contextIndex(c){
+  const cfg=getCfg();
+  const closedIdx=Math.max(0,c.length-2);
+  const liveIdx=Math.max(0,c.length-1);
+  if (cfg.earlyMode === 'ON' && liveIdx > 110) {
+    const live=c[liveIdx], age=Date.now()-(live.openTime||0), remain=(live.closeTime||0)-Date.now();
+    // Dùng nến đang chạy sau khi đã có ít nhất 45 giây dữ liệu và nến chưa đóng.
+    if (age > 45000 && remain > 15000) return liveIdx;
+  }
+  return closedIdx;
+}
 function basicContext(symbol,c){
-  const e=enrich(c), i=c.length-2, last=c[i], prev=c[i-1], atrPct=e.atr[i]/last.close*100;
-  const high20=Math.max(...c.slice(i-20,i).map(x=>x.high)), low20=Math.min(...c.slice(i-20,i).map(x=>x.low));
+  const e=enrich(c), i=contextIndex(c), last=c[i], prev=c[Math.max(0,i-1)], atrPct=e.atr[i]/last.close*100;
+  const high20=Math.max(...c.slice(Math.max(0,i-20),i).map(x=>x.high)), low20=Math.min(...c.slice(Math.max(0,i-20),i).map(x=>x.low));
   const q=candleQuality(c,i,e.atr[i]);
   const volSpike=e.volAvg[i] ? last.volume/e.volAvg[i] : 1;
   const rangePct=(high20-low20)/last.close*100;
-  return {symbol,c,e,i,last,prev,atrPct,high20,low20,quality:q,volSpike,rangePct};
+  const isLiveCandle = i === c.length-1 && Date.now() < (last.closeTime||0);
+  return {symbol,c,e,i,last,prev,atrPct,high20,low20,quality:q,volSpike,rangePct,isLiveCandle};
 }
 function sideAllowed(side){ const m=getCfg().sideMode; return m==='BOTH' || m===side; }
 function playbookAllowed(pb){ const m=getCfg().playbookMode; return m==='ALL' || m===pb; }
@@ -499,12 +537,12 @@ function detectCandidates(symbol,c,market){
 }
 
 function buildPlan(ctx){
-  const {symbol,side,playbook,base,reasons,market,e,i,last,prev,atrPct,quality,high20,low20,volSpike,c}=ctx;
+  const {symbol,side,playbook,base,reasons,market,e,i,last,prev,atrPct,quality,high20,low20,volSpike,c,isLiveCandle}=ctx;
   const atrv=e.atr[i], close=last.close;
   if (!Number.isFinite(atrv) || atrv <= 0 || close <= 0) return null;
   const swingLow=Math.min(...c.slice(Math.max(0,i-8),i+1).map(x=>x.low));
   const swingHigh=Math.max(...c.slice(Math.max(0,i-8),i+1).map(x=>x.high));
-  let entry, sl, tp1R, tp2R, entryStyle='HYBRID';
+  let entry, sl, tp1R, tp2R;
   const spread = Math.max(atrv*.08, close*.00025);
   if (side==='LONG'){
     if (playbook==='TREND_PULLBACK') entry = Math.min(close, Math.max(e.ema20[i], e.vwap[i]) + atrv*.08);
@@ -521,37 +559,75 @@ function buildPlan(ctx){
   }
   const risk = Math.abs(entry-sl);
   if (!Number.isFinite(risk) || risk/entry*100 < .12 || risk/entry*100 > 2.4) return null;
-  if (playbook==='RANGE_SCALP') { tp1R=.62; tp2R=1.05; }
-  else if (playbook==='REVERSAL_SWEEP') { tp1R=.72; tp2R=1.15; }
-  else if (playbook==='BREAKOUT_CONTINUATION') { tp1R=.82; tp2R=1.45; }
-  else { tp1R=.78; tp2R=1.35; }
+  if (playbook==='RANGE_SCALP') { tp1R=.56; tp2R=0; }
+  else if (playbook==='REVERSAL_SWEEP') { tp1R=.68; tp2R=1.05; }
+  else if (playbook==='BREAKOUT_CONTINUATION') { tp1R=.74; tp2R=1.25; }
+  else { tp1R=.72; tp2R=1.20; }
   const follow = followThroughScore({side,playbook,e,i,market,quality,volSpike,atrPct});
-  const tp2Enabled = follow >= 58 && playbook !== 'RANGE_SCALP';
+  const tp2Enabled = follow >= 62 && playbook === 'TREND_PULLBACK';
   const tp1 = side==='LONG' ? entry + risk*tp1R : entry - risk*tp1R;
   const tp2 = tp2Enabled ? (side==='LONG' ? entry + risk*tp2R : entry - risk*tp2R) : null;
   const probs = estimateProbabilities({symbol,side,playbook,market,base,follow,quality,atrPct,entry,close,risk});
   const ev = expectedR(probs,tp1R,tp2Enabled?tp2R:0);
-  const edgeScore = clamp(base*.35 + probs.tp1*.42 + probs.entryFill*.12 + Math.max(0,ev)*18 - probs.slBeforeTp1*.16 - probs.expired*.10,0,100);
+  const edgeScore = clamp(base*.30 + probs.tp1*.40 + probs.entryFill*.10 + Math.max(0,ev)*14 - probs.slBeforeTp1*.18 - probs.expired*.12,0,100);
   const grade = edgeScore>=82?'A+':edgeScore>=72?'A':edgeScore>=62?'B+':edgeScore>=52?'B':edgeScore>=42?'C':'D';
-  const bucket = decideBucket({probs,ev,edgeScore,grade,raw:base});
+  const detectedAt = Date.now();
+  const signalTime = (isLiveCandle || detectedAt < (last.closeTime||0)) ? detectedAt : (last.closeTime || detectedAt);
+  const cfg=getCfg();
+  const humanBufferSec = +cfg.humanBufferSec || 120;
+  const actionableAt = detectedAt + humanBufferSec*1000;
+  const bucket = decideBucket({probs,ev,edgeScore,grade,raw:base, side, playbook, market, atrPct, close, entry, tp1, symbol});
   const planKey = [symbol,side,playbook,Math.round(entry*1e8),Math.round(sl*1e8),Math.round((tp2||tp1)*1e8)].join('_');
-  const signalTime = last.closeTime || Date.now();
   const id = `${symbol}_${getCfg().interval}_${side}_${playbook}_${Math.floor(signalTime/60000)}_${hash(planKey)}`;
   const riskPct = risk/entry*100;
-  return {
+  const symbol24hVolume = state.volume24h?.[symbol] || 0;
+  const plan = {
     id, planKey, symbol, interval:getCfg().interval, trackInterval:getCfg().trackInterval, side, playbook,
     bucket, status: bucket==='RAW_ONLY'?'RAW_ONLY':'WAIT_ENTRY', result:null, grade,
-    signalTime, createdAt:new Date().toISOString(), lastCheckedAt:null, closeTime:null,
+    signalTime, detectedAt, actionableAt, humanBufferSec, isLiveSignal:!!isLiveCandle,
+    createdAt:new Date(detectedAt).toISOString(), lastCheckedAt:null, closeTime:null,
     entry, sl, tp1, tp2, tp2Enabled, tp1R, tp2R:tp2Enabled?tp2R:0, rr:tp2Enabled?tp2R:tp1R,
     signalPrice: close, score: Math.round(base), edgeScore: Math.round(edgeScore), ev:+ev.toFixed(3),
     entryFillProb:Math.round(probs.entryFill), tp1Prob:Math.round(probs.tp1), tp2Prob:Math.round(probs.tp2),
     slRisk:Math.round(probs.slBeforeTp1), expiredRisk:Math.round(probs.expired), followScore:Math.round(follow),
-    adx:e.adx[i], rsi:e.rsi[i], atrPct, vwap:e.vwap[i], ema20:e.ema20[i], ema50:e.ema50[i], stability:quality, quoteVolume:last.quoteVolume,
+    adx:e.adx[i], rsi:e.rsi[i], atrPct, vwap:e.vwap[i], ema20:e.ema20[i], ema50:e.ema50[i], stability:quality,
+    quoteVolume:last.quoteVolume, symbol24hVolume,
     marketRegime:market.type, marketTrend:market.trend, reasons:[...reasons, `Follow ${Math.round(follow)}/100`, `EV ${ev.toFixed(2)}R`, `Bucket ${bucket}`],
     notes:[], entryHitTime:null, tp1HitTime:null, tp2HitTime:null, slHitTime:null, mfe:0, mae:0,
     learningKey: learningKeys({symbol,side,playbook,market}).exact,
-    duplicateState:'NEW'
+    duplicateState:'NEW', manualTradeable:true, actionStatus:'ACTIONABLE_PENDING'
   };
+  applyActionabilityPolicy(plan, {close, atrPct, last, detectedAt, isLiveCandle});
+  return plan;
+}
+function applyActionabilityPolicy(s, ctx={}){
+  const cfg=getCfg();
+  const close = Number.isFinite(+ctx.close) ? +ctx.close : +s.signalPrice;
+  const atrPct = Number.isFinite(+ctx.atrPct) ? +ctx.atrPct : (+s.atrPct || 0);
+  const minGapPct = cfg.manualGate==='RESEARCH' ? Math.max(.025, atrPct*.10) : cfg.manualGate==='BALANCED' ? Math.max(.04, atrPct*.14) : Math.max(.055, atrPct*.18);
+  const entryGapPct = Math.abs((s.entry||0)-close)/(s.entry||close||1)*100;
+  const tpAlready = (s.side==='LONG' && close >= s.tp1) || (s.side==='SHORT' && close <= s.tp1);
+  const lowVol = s.symbol24hVolume && s.symbol24hVolume < 10000000;
+  const midVol = s.symbol24hVolume && s.symbol24hVolume < 30000000;
+  const strongBearLong = s.marketRegime==='BTC_BEAR' && s.marketTrend==='STRONG' && s.side==='LONG';
+  const strongBullShort = s.marketRegime==='BTC_BULL' && s.marketTrend==='STRONG' && s.side==='SHORT';
+
+  if (tpAlready) {
+    s.manualTradeable=false; s.actionStatus='TP_ALREADY_TOUCHED_BEFORE_ENTRY'; s.bucket='SHADOW_TEST';
+    s.reasons.push('Manual Gate: giá đã đi tới/vượt TP1 tại thời điểm phát hiện, không còn tradeable.');
+  } else if (entryGapPct <= minGapPct) {
+    s.manualTradeable=false; s.actionStatus='ENTRY_TOO_CLOSE';
+    if (s.bucket==='TRADE_READY') s.bucket='SHADOW_TEST';
+    else if (s.bucket==='FORWARD_TEST' && cfg.manualGate!=='RESEARCH') s.bucket='SHADOW_TEST';
+    s.reasons.push(`Manual Gate: Entry quá sát giá hiện tại (${entryGapPct.toFixed(3)}%), cần buffer ${s.humanBufferSec}s.`);
+  }
+  if (lowVol) { s.manualTradeable=false; s.bucket='SHADOW_TEST'; s.actionStatus=s.actionStatus==='ACTIONABLE_PENDING'?'LOW_LIQUIDITY':s.actionStatus; s.reasons.push('Liquidity Gate: 24h volume < 10M, chỉ Shadow Test.'); }
+  else if (midVol && s.bucket==='TRADE_READY') { s.bucket='FORWARD_TEST'; s.reasons.push('Liquidity Gate: 24h volume 10M-30M, không cho Trade Ready.'); }
+
+  if ((strongBearLong || strongBullShort) && s.bucket==='TRADE_READY') { s.bucket='SHADOW_TEST'; s.manualTradeable=false; s.actionStatus='AGAINST_STRONG_BTC_REGIME'; s.reasons.push('Regime Gate: ngược BTC trend mạnh, không cho Trade Ready.'); }
+  if (s.playbook==='BREAKOUT_CONTINUATION' && s.bucket==='TRADE_READY') { s.bucket='SHADOW_TEST'; s.reasons.push('Playbook Gate: Breakout tạm khóa Trade Ready, cần retest/actionable tốt hơn.'); }
+  if (s.playbook==='RANGE_SCALP' && s.bucket==='TRADE_READY') { s.bucket='FORWARD_TEST'; s.reasons.push('Playbook Gate: Range Scalp không dùng TP2 và không lên Trade Ready mặc định.'); }
+  if (s.bucket==='TRADE_READY' && s.manualTradeable===false) s.bucket='SHADOW_TEST';
 }
 function followThroughScore({side,playbook,e,i,market,quality,volSpike,atrPct}){
   let s = 40;
@@ -576,33 +652,47 @@ function learningKeys({symbol,side,playbook,market}){
     side:`${side}|${regime}`
   };
 }
-function computeLearning(){
+function manualTradeableForStats(s){
+  if (s.manualTradeable === false) return false;
+  if (/MISSED|TOO_CLOSE|TP_ALREADY|LATE_SIGNAL/i.test(String(s.actionStatus||s.status||s.result||''))) return false;
+  const det = +s.detectedAt || Date.parse(s.createdAt||'') || +s.signalTime || 0;
+  const act = +s.actionableAt || (det + (+s.humanBufferSec||getCfg().humanBufferSec||120)*1000);
+  if (s.entryHitTime && +s.entryHitTime < act) return false;
+  return true;
+}
+function duplicateWeight(s){ return String(s.duplicateState||'').startsWith('DUP_OF_') ? 0.35 : 1; }
+function computeLearning(mode='setup'){
   const stats = new Map();
-  const add = (key,s) => {
-    if (!key) return;
-    if (!stats.has(key)) stats.set(key,{key,n:0,tp1:0,tp2:0,loss:0,weak:0,noEntry:0,expired:0,evSum:0,entryFill:0});
-    const x=stats.get(key); x.n++;
-    if (s.entryHitTime) x.entryFill++;
-    if (isTp1(s)) x.tp1++;
-    if (isTp2(s)) x.tp2++;
-    if (isLoss(s)) x.loss++;
-    if (isWeak(s)) x.weak++;
-    if (resultKind(s)==='NO_ENTRY') x.noEntry++;
-    if (String(s.status||s.result||'').includes('EXPIRED')) x.expired++;
-    x.evSum += Number.isFinite(+s.ev) ? +s.ev : 0;
+  const add = (key,s,w=1) => {
+    if (!key || w<=0) return;
+    if (!stats.has(key)) stats.set(key,{key,n:0,tp1:0,tp2:0,loss:0,weak:0,noEntry:0,expired:0,missed:0,tooClose:0,evSum:0,entryFill:0,manualN:0});
+    const x=stats.get(key); x.n+=w;
+    if (mode==='manual') x.manualN+=w;
+    if (s.entryHitTime) x.entryFill+=w;
+    if (isTp1(s)) x.tp1+=w;
+    if (isTp2(s)) x.tp2+=w;
+    if (isLoss(s)) x.loss+=w;
+    if (isWeak(s)) x.weak+=w;
+    if (resultKind(s)==='NO_ENTRY') x.noEntry+=w;
+    if (resultKind(s)==='MISSED') x.missed+=w;
+    if (resultKind(s)==='TOO_CLOSE') x.tooClose+=w;
+    if (String(s.status||s.result||'').includes('EXPIRED')) x.expired+=w;
+    x.evSum += (Number.isFinite(+s.ev) ? +s.ev : 0)*w;
   };
   for (const s of state.signals) {
     if (invalidTimeOrderReason(s)) continue;
     if (!statusClosed(s)) continue;
+    if (mode==='manual' && !manualTradeableForStats(s)) continue;
+    const w = mode==='manual' ? duplicateWeight(s) : 1;
     const mk={type:s.marketRegime||'UNKNOWN'};
     const keys=learningKeys({symbol:s.symbol,side:s.side,playbook:s.playbook,market:mk});
-    Object.values(keys).forEach(k=>add(k,s));
+    Object.values(keys).forEach(k=>add(k,s,w));
   }
   return stats;
 }
 function bayes(rateN, total, prior=50, strength=8){ return (rateN + prior/100*strength)/(total+strength)*100; }
 function estimateProbabilities({symbol,side,playbook,market,base,follow,quality,atrPct,entry,close,risk}){
-  const stats=computeLearning(), keys=learningKeys({symbol,side,playbook,market});
+  const stats=computeLearning('manual'), keys=learningKeys({symbol,side,playbook,market});
   const mix=[keys.exact,keys.playbook,keys.symbol,keys.side].map((k,idx)=>({s:stats.get(k),w:[.44,.28,.18,.10][idx]})).filter(x=>x.s);
   const weighted = (fn, prior) => {
     if (!mix.length) return prior;
@@ -626,11 +716,19 @@ function expectedR(p,tp1R,tp2R){
   const p1=p.tp1/100, p2=p.tp2/100, pl=p.slBeforeTp1/100, pe=p.expired/100;
   return (p1-p2)*tp1R + p2*(tp2R||tp1R) - pl*1 - pe*.18 - .045;
 }
-function decideBucket({probs,ev,edgeScore,grade,raw}){
+function decideBucket({probs,ev,edgeScore,grade,raw,side,playbook,market,atrPct,close,entry,tp1,symbol}){
   const cfg=getCfg();
   if (raw < cfg.minRaw) return 'RAW_ONLY';
-  if (probs.tp1 >= cfg.tradeTp1 && ev > .04 && edgeScore >= 70 && probs.slBeforeTp1 <= 45) return 'TRADE_READY';
-  if (probs.tp1 >= cfg.forwardTp1 && probs.entryFill >= 40 && ev > -.12 && edgeScore >= 52) return 'FORWARD_TEST';
+  const vol = state.volume24h?.[symbol] || 0;
+  const strictVolOk = !vol || vol >= Math.max(30000000, cfg.minVol || 0);
+  const regimeOk = !((market?.type==='BTC_BEAR' && market?.trend==='STRONG' && side==='LONG') || (market?.type==='BTC_BULL' && market?.trend==='STRONG' && side==='SHORT'));
+  const playbookTradeOk = playbook === 'TREND_PULLBACK';
+  const entryGapPct = Math.abs((entry||0)-(close||0))/(entry||close||1)*100;
+  const minGapPct = cfg.manualGate==='RESEARCH' ? Math.max(.025, atrPct*.10) : cfg.manualGate==='BALANCED' ? Math.max(.04, atrPct*.14) : Math.max(.055, atrPct*.18);
+  const tpAlready = (side==='LONG' && close >= tp1) || (side==='SHORT' && close <= tp1);
+  const actionableOk = !tpAlready && entryGapPct > minGapPct;
+  if (probs.tp1 >= cfg.tradeTp1 && ev > .08 && edgeScore >= 68 && probs.slBeforeTp1 <= 35 && actionableOk && regimeOk && playbookTradeOk && strictVolOk) return 'TRADE_READY';
+  if (probs.tp1 >= cfg.forwardTp1 && probs.entryFill >= 40 && ev > -.10 && edgeScore >= 50) return 'FORWARD_TEST';
   return 'SHADOW_TEST';
 }
 function hash(str){ let h=2166136261; for(let i=0;i<str.length;i++){h^=str.charCodeAt(i); h=Math.imul(h,16777619);} return (h>>>0).toString(36).toUpperCase(); }
@@ -692,6 +790,7 @@ async function scan(){
 
 async function trackAll(){
   repairAllInvalidTimeOrders(false);
+  state.signals.forEach(normalizeActionability);
   const list = state.signals.filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY');
   if (!list.length) return setStatus('Không có signal active để track.');
   setStatus(`Đang forward-track ${list.length} signal bằng nến ${getCfg().trackInterval}...`);
@@ -761,13 +860,31 @@ function repairAllInvalidTimeOrders(show=false){
   }
   return fixed;
 }
+function normalizeActionability(s){
+  const det = +s.detectedAt || Date.parse(s.createdAt||'') || +s.signalTime || Date.now();
+  if (!s.detectedAt) s.detectedAt = det;
+  if (!s.humanBufferSec) s.humanBufferSec = +getCfg().humanBufferSec || 120;
+  if (!s.actionableAt) s.actionableAt = det + (+s.humanBufferSec||120)*1000;
+  if (s.entryHitTime && +s.entryHitTime < +s.actionableAt) {
+    s.manualTradeable = false;
+    s.actionStatus = 'MISSED_ENTRY_BEFORE_ACTIONABLE';
+    if (!(s.notes||[]).some(n=>String(n).includes('Manual Gate: Entry trước actionableAt'))) {
+      s.notes=[...(s.notes||[]),`Manual Gate: Entry trước actionableAt (${new Date(+s.actionableAt).toLocaleString('vi-VN')}), chỉ tính setup-edge, không tính manual winrate.`];
+    }
+  }
+  return s;
+}
 async function trackOne(s){
+  normalizeActionability(s);
   repairInvalidTimeOrder(s);
-  const baseTime = +s.entryHitTime || +s.signalTime || Date.now();
-  const start = Math.max(baseTime - 60000, Date.now() - 1000*60*60*24*5);
+  const det = +s.detectedAt || Date.parse(s.createdAt||'') || +s.signalTime || Date.now();
+  const actionableAt = +s.actionableAt || (det + (+s.humanBufferSec||getCfg().humanBufferSec||120)*1000);
+  const trackingStart = Math.max(+s.signalTime||0, det, actionableAt);
+  const baseTime = +s.entryHitTime || +s.signalTime || det || Date.now();
+  const start = Math.max(Math.min(baseTime, trackingStart) - 120000, Date.now() - 1000*60*60*24*5);
   const candles = await getKlines(s.symbol, s.trackInterval || getCfg().trackInterval, 1000, start);
-  if (!candles.length) return;
-  const expiry = (+s.signalTime||Date.now()) + (s.expireHours || getCfg().expireHours)*3600000;
+  repairInvalidTimeOrder(s);
+  const expiry = trackingStart + (s.expireHours || getCfg().expireHours)*3600000;
   let entered=!!s.entryHitTime, tp1=!!s.tp1HitTime, closed=statusClosed(s);
   let mfe=s.mfe||0, mae=s.mae||0;
   let lastT=0;
@@ -775,27 +892,41 @@ async function trackOne(s){
     const t=k.closeTime || k.openTime;
     if (!Number.isFinite(t) || t <= lastT) continue;
     lastT=t;
-    if (t < (+s.signalTime||0)) continue;
     if (closed) break;
+
+    // Không tính entry/TP/SL trước thời điểm người dùng có thể hành động.
+    if (!entered && t < trackingStart) {
+      if (touch(k,s.entry)) {
+        s.manualTradeable=false;
+        s.actionStatus='MISSED_ENTRY_BEFORE_ACTIONABLE';
+        s.missedEntryTime=t;
+        s.status='MISSED_ENTRY';
+        s.result='MISSED_ENTRY';
+        s.closeTime=t;
+        s.bucket='SHADOW_TEST';
+        s.notes=[...(s.notes||[]),`MISSED_ENTRY: Entry đã chạm ${new Date(t).toLocaleString('vi-VN')} trước actionableAt ${new Date(trackingStart).toLocaleString('vi-VN')}.`];
+        closed=true; break;
+      }
+      continue;
+    }
 
     if (!entered){
       if (touch(k,s.entry)) {
         entered=true;
         s.entryHitTime=t;
         s.status='ENTRY_FILLED';
+        s.actionStatus = s.actionStatus || 'ACTIONABLE_ENTRY_FILLED';
         s.notes=[...(s.notes||[]),`Entry hit ${new Date(t).toLocaleString('vi-VN')}`];
-        // Không kiểm TP/SL trong chính nến khớp entry vì OHLC 1m không biết thứ tự giá chạy trong nến.
-        // Target chỉ được tính từ các nến sau entry để tránh TP xuất hiện trước Entry.
+        // Không kiểm TP/SL trong chính nến khớp entry vì OHLC 1m không biết thứ tự giá chạy.
         continue;
       }
       if (t > expiry) {
         s.status='EXPIRED_NO_ENTRY'; s.result='EXPIRED_NO_ENTRY'; s.closeTime=t; closed=true; break;
       }
-      s.status='WAIT_ENTRY';
+      s.status=s.isLiveSignal?'ARMED_WAIT_ENTRY':'WAIT_ENTRY';
       continue;
     }
 
-    // Bắt buộc mọi TP/SL phải nằm sau thời điểm Entry.
     if (s.entryHitTime && t <= +s.entryHitTime) continue;
 
     const moveFav = s.side==='LONG' ? (k.high-s.entry)/(Math.abs(s.entry-s.sl))*100 : (s.entry-k.low)/(Math.abs(s.entry-s.sl))*100;
@@ -803,7 +934,6 @@ async function trackOne(s){
     mfe=Math.max(mfe,moveFav); mae=Math.max(mae,moveAdv);
 
     const hitSL = touch(k,s.sl), hitTP1=touch(k,s.tp1), hitTP2=s.tp2Enabled && s.tp2 && touch(k,s.tp2);
-    // Conservative ambiguity handling: nếu SL và TP1 cùng xuất hiện trong một nến trước TP1, tính LOSS.
     if (!tp1 && hitSL && hitTP1) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; s.notes=[...(s.notes||[]),'1m ambiguity: SL & TP1 cùng nến, tính conservative = LOSS']; closed=true; break; }
     if (!tp1 && hitSL) { s.status='LOSS'; s.result='LOSS'; s.slHitTime=t; s.closeTime=t; closed=true; break; }
     if (!tp1 && hitTP1) { tp1=true; s.tp1HitTime=t; s.status='TP1_HIT'; s.result='TP1_HIT_TRACKING_TP2_OR_SL'; s.notes=[...(s.notes||[]),`TP1 hit ${new Date(t).toLocaleString('vi-VN')}`]; }
@@ -814,6 +944,7 @@ async function trackOne(s){
     if (t > expiry && tp1) { s.status='EXPIRED_AFTER_TP1_NO_TP2'; s.result='EXPIRED_AFTER_TP1_NO_TP2'; s.closeTime=t; closed=true; break; }
   }
   repairInvalidTimeOrder(s);
+  normalizeActionability(s);
   s.mfe=+mfe.toFixed(2); s.mae=+mae.toFixed(2); s.lastCheckedAt=new Date().toISOString();
 }
 function touch(k, price){ return price != null && k.low <= price && k.high >= price; }
@@ -842,8 +973,8 @@ function render(){
   $('learningView').classList.add('hide'); $('debugView').classList.add('hide'); $('tableView').classList.remove('hide');
   const rows=currentRows();
   $('tableView').innerHTML = `<table><thead><tr>
-    <th>Signal</th><th>Bucket / Status</th><th>Playbook</th><th>Prices</th><th>Probabilities</th><th>Edge</th><th>Market</th><th>Reasons</th><th>Times</th>
-  </tr></thead><tbody>${rows.map(rowHTML).join('') || `<tr><td colspan="9" class="muted">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
+    <th>Signal</th><th>Bucket / Status</th><th>Playbook</th><th>Prices</th><th>Probabilities</th><th>Edge</th><th>Market</th><th>Actionable</th><th>Reasons</th><th>Times</th>
+  </tr></thead><tbody>${rows.map(rowHTML).join('') || `<tr><td colspan="10" class="muted">Chưa có dữ liệu.</td></tr>`}</tbody></table>`;
 }
 function rowHTML(s){
   return `<tr>
@@ -855,7 +986,8 @@ function rowHTML(s){
     <td>Entry <b>${fmt(s.entry,8)}</b><br>SL <b class="bad">${fmt(s.sl,8)}</b><br>TP1 <b class="good">${fmt(s.tp1,8)}</b><br>TP2 <b class="${s.tp2Enabled?'good':'muted'}">${s.tp2Enabled?fmt(s.tp2,8):'OFF'}</b></td>
     <td>Entry Fill <b>${pct(s.entryFillProb)}</b><br>TP1 before SL <b>${pct(s.tp1Prob)}</b><br>TP2 <b>${pct(s.tp2Prob)}</b><br>SL Risk <b class="${(s.slRisk||0)>48?'bad':'muted'}">${pct(s.slRisk)}</b><br>Expired <b>${pct(s.expiredRisk)}</b></td>
     <td><span class="score ${scoreClass(s.edgeScore)}">${s.edgeScore||0}</span><br>Raw ${s.score||0}<br>EV <b class="${(s.ev||0)>0?'good':'warn'}">${fmt(s.ev,2)}R</b><br>MFE/MAE ${fmt(s.mfe,1)} / ${fmt(s.mae,1)}</td>
-    <td>${s.marketRegime||'-'}<br>ADX ${fmt(s.adx,1)}<br>RSI ${fmt(s.rsi,1)}<br>ATR ${fmt(s.atrPct,2)}%</td>
+    <td>${s.marketRegime||'-'}<br>ADX ${fmt(s.adx,1)}<br>RSI ${fmt(s.rsi,1)}<br>ATR ${fmt(s.atrPct,2)}%<br>24hVol ${s.symbol24hVolume?fmt(s.symbol24hVolume/1000000,1)+'M':'-'}</td>
+    <td><b class="${manualTradeableForStats(s)?'good':'warn'}">${manualTradeableForStats(s)?'TRADEABLE':'NOT TRADEABLE'}</b><br>${escapeHTML(s.actionStatus||'-')}<br>Detected ${dateFmt(s.detectedAt)}<br>Actionable ${dateFmt(s.actionableAt)}</td>
     <td>${(s.reasons||[]).slice(0,7).map(x=>`<span class="pill">${escapeHTML(x)}</span>`).join('')}</td>
     <td>Signal ${dateFmt(s.signalTime)}<br>Entry ${dateFmt(s.entryHitTime)}<br>TP1 ${dateFmt(s.tp1HitTime)}<br>Close ${dateFmt(s.closeTime)}</td>
   </tr>`;
@@ -879,26 +1011,32 @@ function escapeHTML(str){ return String(str).replace(/[&<>"']/g,m=>({'&':'&amp;'
 
 function renderMetrics(){
   repairAllInvalidTimeOrders(false);
-  const sig=state.signals, closed=sig.filter(s=>!invalidTimeOrderReason(s) && statusClosed(s)), evs=closed.map(s=>+s.ev).filter(Number.isFinite);
+  state.signals.forEach(normalizeActionability);
+  const sig=state.signals, closed=sig.filter(s=>!invalidTimeOrderReason(s) && statusClosed(s)), manualClosed=closed.filter(manualTradeableForStats), evs=manualClosed.map(s=>+s.ev).filter(Number.isFinite);
   $('mRaw').textContent=state.raw.length;
   $('mShadow').textContent=sig.filter(s=>s.bucket==='SHADOW_TEST' && statusOpen(s)).length;
   $('mForward').textContent=sig.filter(s=>s.bucket==='FORWARD_TEST' && statusOpen(s)).length;
   $('mTrade').textContent=sig.filter(s=>s.bucket==='TRADE_READY' && statusOpen(s)).length;
   $('mWin').textContent=`${sig.filter(isTp2).length} / ${sig.filter(s=>isTp1(s)&&!isTp2(s)).length}`;
   $('mLoss').textContent=`${sig.filter(isLoss).length} / ${sig.filter(isWeak).length}`;
-  $('mTp1Rate').textContent=closed.length ? pct(sig.filter(isTp1).length/closed.length*100,1) : '0%';
+  $('mTp1Rate').textContent=closed.length ? pct(closed.filter(isTp1).length/closed.length*100,1) : '0%';
+  if ($('mManualTp1')) $('mManualTp1').textContent=manualClosed.length ? pct(manualClosed.filter(isTp1).length/manualClosed.length*100,1) : '0%';
+  if ($('mMissed')) $('mMissed').textContent=`${sig.filter(s=>String(s.actionStatus||s.status||s.result||'').includes('MISSED')).length} / ${sig.filter(s=>String(s.actionStatus||'').includes('TOO_CLOSE')).length}`;
   $('mEv').textContent=Number.isFinite(mean(evs)) ? `${mean(evs).toFixed(2)}R` : '0R';
 }
 function renderLearning(){
   $('tableView').classList.add('hide'); $('debugView').classList.add('hide'); $('learningView').classList.remove('hide');
-  const stats=Array.from(computeLearning().values()).filter(x=>x.n>=1).sort((a,b)=>b.n-a.n).slice(0,120);
-  $('learningView').innerHTML = `<div class="learning-grid">${stats.map(s=>{
-    const tp1=bayes(s.tp1,s.n,50,6), tp2=bayes(s.tp2,s.n,20,6), loss=bayes(s.loss,s.n,35,6);
-    return `<div class="learn-card"><b>${escapeHTML(s.key)}</b><div class="meta">
-      Samples: ${s.n}<br>TP1 rate: <span class="${tp1>=55?'good':'warn'}">${tp1.toFixed(1)}%</span> · TP2: ${tp2.toFixed(1)}% · Loss: <span class="${loss>45?'bad':'muted'}">${loss.toFixed(1)}%</span><br>
-      Entry fill: ${bayes(s.entryFill,s.n,55,6).toFixed(1)}% · Weak: ${s.weak} · No entry: ${s.noEntry}
-    </div></div>`;
-  }).join('') || '<div class="muted">Chưa có closed outcome để học.</div>'}</div>`;
+  const block = (title, mode) => {
+    const stats=Array.from(computeLearning(mode).values()).filter(x=>x.n>=1).sort((a,b)=>b.n-a.n).slice(0,80);
+    return `<h3>${title}</h3><div class="learning-grid">${stats.map(s=>{
+      const tp1=bayes(s.tp1,s.n,50,6), tp2=bayes(s.tp2,s.n,20,6), loss=bayes(s.loss,s.n,35,6);
+      return `<div class="learn-card"><b>${escapeHTML(s.key)}</b><div class="meta">
+        Samples: ${s.n.toFixed(1)}${mode==='manual'?' manual-weighted':''}<br>TP1 rate: <span class="${tp1>=55?'good':'warn'}">${tp1.toFixed(1)}%</span> · TP2: ${tp2.toFixed(1)}% · Loss: <span class="${loss>45?'bad':'muted'}">${loss.toFixed(1)}%</span><br>
+        Entry fill: ${bayes(s.entryFill,s.n,55,6).toFixed(1)}% · Weak: ${s.weak.toFixed(1)} · No entry: ${s.noEntry.toFixed(1)} · Missed: ${s.missed.toFixed(1)}
+      </div></div>`;
+    }).join('') || '<div class="muted">Chưa có closed outcome để học.</div>'}</div>`;
+  };
+  $('learningView').innerHTML = `<div class="notice">Setup Edge học toàn bộ outcome để biết setup đúng/sai. Manual Edge chỉ học các signal còn kịp vào lệnh, bỏ missed-entry và giảm trọng số duplicate.</div>${block('Manual Edge Stats - dùng cho Trade Ready', 'manual')}${block('Setup Edge Stats - nghiên cứu setup', 'setup')}`;
 }
 function renderDebug(){
   $('tableView').classList.add('hide'); $('learningView').classList.add('hide'); $('debugView').classList.remove('hide');
@@ -906,7 +1044,7 @@ function renderDebug(){
 }
 
 function exportJSON(){
-  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals},null,2)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB_V6_6_ACTIONABLE', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals},null,2)], {type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`fta-v6-edge-lab-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
 }
 async function importJSON(file){
@@ -914,6 +1052,7 @@ async function importJSON(file){
   if (Array.isArray(data)) state.signals=data;
   else { if (Array.isArray(data.raw)) state.raw=data.raw; if (Array.isArray(data.signals)) state.signals=data.signals; if (data.cfg) applyCfg(data.cfg); }
   const fixed = repairAllInvalidTimeOrders(false);
+  state.signals.forEach(normalizeActionability);
   saveJSON(RAW_STORE,state.raw); saveJSON(STORE,state.signals); saveCfg(); render(); setStatus(`Import JSON xong${fixed?`, đã sửa ${fixed} signal lỗi time-order`:''}.`);
 }
 
@@ -1045,6 +1184,7 @@ async function pullSupabase(){
     }
     state.signals=Array.from(map.values()).sort((a,b)=>(b.signalTime||0)-(a.signalTime||0)).slice(0,1200);
     const fixed = repairAllInvalidTimeOrders(false);
+    state.signals.forEach(normalizeActionability);
     saveJSON(STORE,state.signals); render(); setStatus(`Pull cloud xong: ${data?.length||0} dòng, local hiện có ${state.signals.length}${fixed?`, đã sửa ${fixed} lỗi time-order`:''}.`);
   }catch(e){
     console.warn('Pull Supabase lỗi:', e);
@@ -1056,7 +1196,7 @@ async function pullSupabase(){
 
 function startAuto(){
   if(state.autoTimer){ clearInterval(state.autoTimer); state.autoTimer=null; $('autoBtn').textContent='Auto: OFF'; setStatus('Đã tắt Auto.'); return; }
-  state.autoTimer=setInterval(async()=>{ await scan(); await trackAll(); }, Math.max(120000, (+$('scanSec')||300)*1000));
+  state.autoTimer=setInterval(async()=>{ await scan(); await trackAll(); }, Math.max(60000, (+($('scanSec')?.value)||getCfg().scanSec||90)*1000));
   $('autoBtn').textContent='Auto: ON'; setStatus('Đã bật Auto: mỗi chu kỳ sẽ Scan + Track + Sync nếu đã login Supabase.');
 }
 
@@ -1098,6 +1238,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
 
   initSupabase();
   const fixedOnLoad = repairAllInvalidTimeOrders(false);
+  state.signals.forEach(normalizeActionability);
+  saveJSON(STORE,state.signals);
   render();
   if (fixedOnLoad) setStatus(`Đã tự sửa ${fixedOnLoad} signal lỗi time-order trong local. Bấm Push Cloud để ghi đè dữ liệu lỗi trên Supabase.`);
 });
