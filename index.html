@@ -38,6 +38,7 @@
     button:disabled{opacity:.55;cursor:not-allowed}
     .copybtn{margin-top:8px;padding:7px 9px;font-size:11px;border-radius:10px;background:linear-gradient(135deg,#059669,#20d489);color:#06140d}
     .copybtn.disabled{background:#172033;color:#66748c;border:1px solid var(--border);cursor:not-allowed}
+    .copybtn.candidate{background:linear-gradient(135deg,#f59e0b,#ffd166);color:#211300}
     .pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 8px;background:#0b1220;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}
     .tag{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:900;white-space:nowrap}
     .long{background:rgba(32,212,137,.16);color:var(--good);border:1px solid rgba(32,212,137,.42)}
@@ -45,6 +46,7 @@
     .shadowTag{background:rgba(167,139,250,.16);color:var(--purple);border:1px solid rgba(167,139,250,.42)}
     .forwardTag{background:rgba(125,211,252,.14);color:var(--blue);border:1px solid rgba(125,211,252,.38)}
     .tradeTag{background:rgba(32,212,137,.16);color:var(--good);border:1px solid rgba(32,212,137,.42)}
+    .candidateTag{background:rgba(255,209,102,.15);color:var(--warn);border:1px solid rgba(255,209,102,.45)}
     .rawTag{background:rgba(251,146,60,.15);color:var(--orange);border:1px solid rgba(251,146,60,.38)}
     .lossTag{background:rgba(255,92,122,.15);color:var(--bad);border:1px solid rgba(255,92,122,.38)}
     .warnTag{background:rgba(255,209,102,.14);color:var(--warn);border:1px solid rgba(255,209,102,.38)}
@@ -179,11 +181,11 @@
 <div class="wrap">
   <header>
     <div>
-      <h1>FTA v6 Edge Lab v6.10</h1>
+      <h1>FTA v6 Edge Lab v6.14</h1>
       <div class="sub">
         Outcome-driven futures assistant: scan rộng để thu thập mẫu, tự đưa tín hiệu vào Shadow/Forward Test,
         học xác suất Entry Fill / TP1 before SL / TP2 / Expired Risk, rồi mới nâng cấp tín hiệu lên Trade Ready.
-        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh. V6.11 đổi sang Card View không dùng scroll ngang: mỗi signal là một thẻ rõ ràng, có vùng tóm tắt và chi tiết đầy đủ, vẫn giữ Risk Quick Order và Binance-safe limiter.
+        Tool này chỉ phục vụ nghiên cứu và hỗ trợ quyết định, không tự đặt lệnh. V6.14 thêm Semi-Auto Balanced + Actionable Candidate: có thêm tầng tín hiệu còn kịp thao tác nhưng chưa đủ Trade Ready, cho phép copy code với cảnh báo.
       </div>
     </div>
     <div class="top-actions">
@@ -210,6 +212,7 @@
           <select id="preset">
             <option value="RESEARCH">Research - học nhiều nhất</option>
             <option value="BALANCED">Balanced Forward Test</option>
+            <option value="SEMI_AUTO">Semi-Auto Balanced</option>
             <option value="TRADE">Trade Assist - lọc chặt</option>
           </select>
         </label>
@@ -229,12 +232,13 @@
           <label>Min raw score <input id="minRaw" type="number" min="0" max="100" value="45"></label>
           <label>Expire hours <input id="expireHours" type="number" min="1" max="24" value="5"></label>
         </div>
-        <div class="row">
+        <div class="row3">
           <label>Forward TP1% min <input id="forwardTp1" type="number" min="0" max="100" value="40"></label>
+          <label>Candidate TP1% min <input id="candidateTp1" type="number" min="0" max="100" value="53"></label>
           <label>Trade TP1% min <input id="tradeTp1" type="number" min="0" max="100" value="58"></label>
         </div>
         <div class="row">
-          <label>Human buffer giây <input id="humanBufferSec" type="number" min="0" max="600" value="120"></label>
+          <label>Human buffer giây <input id="humanBufferSec" type="number" min="0" max="600" value="90"></label>
           <label>Auto scan giây <input id="scanSec" type="number" min="120" max="1800" value="180"></label>
         </div>
         <div class="row3">
@@ -263,7 +267,7 @@
             <select id="earlyMode"><option value="ON" selected>ON - dùng nến đang chạy</option><option value="OFF">OFF - chỉ nến đóng</option></select>
           </label>
           <label>Manual Gate
-            <select id="manualGate"><option value="STRICT" selected>STRICT</option><option value="BALANCED">BALANCED</option><option value="RESEARCH">RESEARCH</option></select>
+            <select id="manualGate"><option value="STRICT">STRICT</option><option value="BALANCED" selected>BALANCED</option><option value="RESEARCH">RESEARCH</option></select>
           </label>
         </div>
         <div class="row">
@@ -293,7 +297,7 @@
       </div>
 
       <div class="notice">
-        V6.13 giữ Actionability Gate, Risk Quick Order, Card View và Full Forward Track. Bản này thêm Commit Learning Stats + Archive Closed để pull/push nhẹ hơn: closed signal đã học sẽ được gom vào Learning Summary rồi archive, không cần kéo toàn bộ lịch sử mỗi lần mở tool.
+        V6.14 giữ Archive Learning + Full Forward Track, đồng thời thêm Actionable Candidate cho semi-auto: Trade Ready vẫn lọc chặt, Candidate có thể copy code nhưng extension sẽ cảnh báo cần kiểm tra kỹ.
       </div>
 
       <hr style="border:0;border-top:1px solid var(--border);margin:14px 0">
@@ -349,6 +353,7 @@
         <div class="mini"><span>Raw Scan</span><b id="mRaw">0</b></div>
         <div class="mini"><span>Shadow</span><b id="mShadow">0</b></div>
         <div class="mini"><span>Forward</span><b id="mForward">0</b></div>
+        <div class="mini"><span>Candidate</span><b id="mCandidate">0</b></div>
         <div class="mini"><span>Trade Ready</span><b id="mTrade">0</b></div>
         <div class="mini"><span>TP2 / TP1</span><b id="mWin">0 / 0</b></div>
         <div class="mini"><span>Loss / Weak</span><b id="mLoss">0 / 0</b></div>
@@ -364,6 +369,7 @@
           <button data-tab="raw" class="active">Raw Scan</button>
           <button data-tab="shadow">Shadow Test</button>
           <button data-tab="forward">Forward Test</button>
+          <button data-tab="candidate">Actionable Candidate</button>
           <button data-tab="trade">Trade Ready</button>
           <button data-tab="active">Active</button>
           <button data-tab="closed">Closed</button>
@@ -389,7 +395,7 @@
 </div>
 
 <script>
-/* FTA v6 Edge Lab v6.13 - Archive + Persistent Learning Summary + Full Forward Track + Risk Quick Order. Not financial advice. */
+/* FTA v6 Edge Lab v6.14 - Semi-Auto Candidate + Archive Learning + Full Forward Track + Risk Quick Order. Not financial advice. */
 const $ = id => document.getElementById(id);
 const STORE = 'fta_v6_edge_lab_signals';
 const RAW_STORE = 'fta_v6_edge_lab_raw';
@@ -451,9 +457,10 @@ function resultKind(s){
 }
 
 const PRESETS = {
-  RESEARCH:{minRaw:42, forwardTp1:36, tradeTp1:65, topN:25, minVol:50000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:180, earlyMode:'ON', manualGate:'RESEARCH', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
-  BALANCED:{minRaw:50, forwardTp1:45, tradeTp1:66, topN:20, minVol:80000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:120, scanSec:180, earlyMode:'ON', manualGate:'BALANCED', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
-  TRADE:{minRaw:60, forwardTp1:52, tradeTp1:70, topN:15, minVol:100000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK', humanBufferSec:150, scanSec:120, earlyMode:'ON', manualGate:'STRICT', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:90}
+  RESEARCH:{minRaw:42, forwardTp1:36, candidateTp1:48, tradeTp1:60, topN:25, minVol:30000000, expireHours:6, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:90, scanSec:180, earlyMode:'ON', manualGate:'RESEARCH', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
+  BALANCED:{minRaw:50, forwardTp1:45, candidateTp1:53, tradeTp1:60, topN:24, minVol:50000000, expireHours:5, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:90, scanSec:120, earlyMode:'ON', manualGate:'BALANCED', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
+  SEMI_AUTO:{minRaw:48, forwardTp1:43, candidateTp1:52, tradeTp1:58, topN:28, minVol:50000000, expireHours:4, sideMode:'BOTH', playbookMode:'ALL', humanBufferSec:90, scanSec:90, earlyMode:'ON', manualGate:'BALANCED', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120},
+  TRADE:{minRaw:58, forwardTp1:50, candidateTp1:55, tradeTp1:62, topN:18, minVol:80000000, expireHours:4, sideMode:'BOTH', playbookMode:'TREND_PULLBACK', humanBufferSec:105, scanSec:120, earlyMode:'ON', manualGate:'STRICT', capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:90}
 };
 
 function getCfg(){
@@ -465,6 +472,7 @@ function getCfg(){
     minVol:+$('minVol').value || 0,
     minRaw:+$('minRaw').value || 45,
     forwardTp1:+$('forwardTp1').value || 40,
+    candidateTp1:+($('candidateTp1')?.value || 53),
     tradeTp1:+$('tradeTp1').value || 58,
     expireHours:+$('expireHours').value || 5,
     humanBufferSec:+($('humanBufferSec')?.value || 120),
@@ -488,7 +496,7 @@ function getCfg(){
   };
 }
 function applyCfg(cfg={}){
-  const merged = {...PRESETS.BALANCED, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'BALANCED', sortBy:'edge', humanBufferSec:120, scanSec:180, capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120, earlyMode:'ON', manualGate:'STRICT', ...cfg};
+  const merged = {...PRESETS.SEMI_AUTO, interval:'15m', trackInterval:'1m', symbols:'', proxyUrl:'', preset:'SEMI_AUTO', sortBy:'edge', candidateTp1:53, humanBufferSec:90, scanSec:90, capitalUSDT:20, riskPct:2, maxMarginUSDT:1, minLeverage:5, maxLeverage:125, preferredLeverages:'5,10,20,25,40,50,75,100,125', feeSlipBufferPct:.08, rejectIfMinOrderExceedsRisk:'ON', orderCodeTtlSec:120, earlyMode:'ON', manualGate:'BALANCED', ...cfg};
   for (const [k,v] of Object.entries(merged)) if ($(k)) $(k).value = v;
 }
 function saveCfg(){ state.cfg = getCfg(); saveJSON(CFG_STORE, state.cfg); setStatus('Đã lưu config local.'); }
@@ -953,17 +961,17 @@ function applyActionabilityPolicy(s, ctx={}){
     s.reasons.push('Manual Gate: giá đã đi tới/vượt TP1 tại thời điểm phát hiện, không còn tradeable.');
   } else if (entryGapPct <= minGapPct) {
     s.manualTradeable=false; s.actionStatus='ENTRY_TOO_CLOSE';
-    if (s.bucket==='TRADE_READY') s.bucket='SHADOW_TEST';
+    if (s.bucket==='TRADE_READY' || s.bucket==='ACTIONABLE_CANDIDATE') s.bucket='SHADOW_TEST';
     else if (s.bucket==='FORWARD_TEST' && cfg.manualGate!=='RESEARCH') s.bucket='SHADOW_TEST';
     s.reasons.push(`Manual Gate: Entry quá sát giá hiện tại (${entryGapPct.toFixed(3)}%), cần buffer ${s.humanBufferSec}s.`);
   }
   if (lowVol) { s.manualTradeable=false; s.bucket='SHADOW_TEST'; s.actionStatus=s.actionStatus==='ACTIONABLE_PENDING'?'LOW_LIQUIDITY':s.actionStatus; s.reasons.push('Liquidity Gate: 24h volume < 10M, chỉ Shadow Test.'); }
   else if (midVol && s.bucket==='TRADE_READY') { s.bucket='FORWARD_TEST'; s.reasons.push('Liquidity Gate: 24h volume 10M-30M, không cho Trade Ready.'); }
 
-  if ((strongBearLong || strongBullShort) && s.bucket==='TRADE_READY') { s.bucket='SHADOW_TEST'; s.manualTradeable=false; s.actionStatus='AGAINST_STRONG_BTC_REGIME'; s.reasons.push('Regime Gate: ngược BTC trend mạnh, không cho Trade Ready.'); }
+  if ((strongBearLong || strongBullShort) && (s.bucket==='TRADE_READY' || s.bucket==='ACTIONABLE_CANDIDATE')) { s.bucket='SHADOW_TEST'; s.manualTradeable=false; s.actionStatus='AGAINST_STRONG_BTC_REGIME'; s.reasons.push('Regime Gate: ngược BTC trend mạnh, không cho Trade Ready/Candidate.'); }
   if (s.playbook==='BREAKOUT_CONTINUATION' && s.bucket==='TRADE_READY') { s.bucket='SHADOW_TEST'; s.reasons.push('Playbook Gate: Breakout tạm khóa Trade Ready, cần retest/actionable tốt hơn.'); }
-  if (s.playbook==='RANGE_SCALP' && s.bucket==='TRADE_READY') { s.bucket='FORWARD_TEST'; s.reasons.push('Playbook Gate: Range Scalp không dùng TP2 và không lên Trade Ready mặc định.'); }
-  if (s.bucket==='TRADE_READY' && s.manualTradeable===false) s.bucket='SHADOW_TEST';
+  if (s.playbook==='RANGE_SCALP' && (s.bucket==='TRADE_READY' || s.bucket==='ACTIONABLE_CANDIDATE')) { s.bucket='FORWARD_TEST'; s.reasons.push('Playbook Gate: Range Scalp không dùng TP2 và không lên Trade Ready/Candidate mặc định.'); }
+  if ((s.bucket==='TRADE_READY' || s.bucket==='ACTIONABLE_CANDIDATE') && s.manualTradeable===false) s.bucket='SHADOW_TEST';
 }
 function followThroughScore({side,playbook,e,i,market,quality,volSpike,atrPct}){
   let s = 40;
@@ -1063,8 +1071,11 @@ function decideBucket({probs,ev,edgeScore,grade,raw,side,playbook,market,atrPct,
   const minGapPct = cfg.manualGate==='RESEARCH' ? Math.max(.025, atrPct*.10) : cfg.manualGate==='BALANCED' ? Math.max(.04, atrPct*.14) : Math.max(.055, atrPct*.18);
   const tpAlready = (side==='LONG' && close >= tp1) || (side==='SHORT' && close <= tp1);
   const actionableOk = !tpAlready && entryGapPct > minGapPct;
-  if (probs.tp1 >= cfg.tradeTp1 && ev > .08 && edgeScore >= 68 && probs.slBeforeTp1 <= 35 && actionableOk && regimeOk && playbookTradeOk && strictVolOk) return 'TRADE_READY';
-  if (probs.tp1 >= cfg.forwardTp1 && probs.entryFill >= 40 && ev > -.10 && edgeScore >= 50) return 'FORWARD_TEST';
+  const candidateTp1 = +cfg.candidateTp1 || 53;
+  const candidatePlaybookOk = ['TREND_PULLBACK','BREAKOUT_CONTINUATION','REVERSAL_SWEEP'].includes(playbook);
+  if (probs.tp1 >= cfg.tradeTp1 && ev > 0 && edgeScore >= 52 && probs.slBeforeTp1 <= 35 && actionableOk && regimeOk && playbookTradeOk && strictVolOk) return 'TRADE_READY';
+  if (probs.tp1 >= candidateTp1 && probs.entryFill >= 50 && ev > -.05 && edgeScore >= 45 && probs.slBeforeTp1 <= 42 && actionableOk && regimeOk && candidatePlaybookOk) return 'ACTIONABLE_CANDIDATE';
+  if (probs.tp1 >= cfg.forwardTp1 && probs.entryFill >= 40 && ev > -.10 && edgeScore >= 45) return 'FORWARD_TEST';
   return 'SHADOW_TEST';
 }
 function hash(str){ let h=2166136261; for(let i=0;i<str.length;i++){h^=str.charCodeAt(i); h=Math.imul(h,16777619);} return (h>>>0).toString(36).toUpperCase(); }
@@ -1078,7 +1089,8 @@ function mergeSignals(newSignals){
     if (dupe) {
       s.duplicateState = `DUP_OF_${dupe.id}`;
       dup++;
-      if (s.bucket === 'TRADE_READY') s.bucket = 'FORWARD_TEST';
+      if (s.bucket === 'TRADE_READY') s.bucket = 'ACTIONABLE_CANDIDATE';
+      else if (s.bucket === 'ACTIONABLE_CANDIDATE') s.bucket = 'FORWARD_TEST';
       s.reasons.push('Duplicate mềm: hạ 1 cấp, vẫn giữ raw để học.');
     }
     if (s.bucket !== 'RAW_ONLY' && !map.has(s.id)) { map.set(s.id,s); added++; }
@@ -1139,7 +1151,7 @@ async function trackAll(){
   const list = state.signals
     .filter(s=>statusOpen(s) && s.bucket !== 'RAW_ONLY')
     .sort((a,b)=>{
-      const pr = {TRADE_READY:0, FORWARD_TEST:1, SHADOW_TEST:2};
+      const pr = {TRADE_READY:0, ACTIONABLE_CANDIDATE:1, FORWARD_TEST:2, SHADOW_TEST:3};
       const pa = pr[a.bucket] ?? 9, pb = pr[b.bucket] ?? 9;
       if (pa !== pb) return pa - pb;
       return (+a.signalTime||0) - (+b.signalTime||0);
@@ -1343,6 +1355,7 @@ function currentRows(){
   let rows = tab==='raw' ? state.raw : state.signals;
   if (tab==='shadow') rows = rows.filter(s=>s.bucket==='SHADOW_TEST');
   if (tab==='forward') rows = rows.filter(s=>s.bucket==='FORWARD_TEST');
+  if (tab==='candidate') rows = rows.filter(s=>s.bucket==='ACTIONABLE_CANDIDATE');
   if (tab==='trade') rows = rows.filter(s=>s.bucket==='TRADE_READY');
   if (tab==='active') rows = rows.filter(statusOpen);
   if (tab==='closed') rows = rows.filter(statusClosed);
@@ -1512,6 +1525,7 @@ function detailRowHTML(s){
 }
 function bucketTag(b){
   if (b==='TRADE_READY') return `<span class="tag tradeTag">TRADE READY</span>`;
+  if (b==='ACTIONABLE_CANDIDATE') return `<span class="tag candidateTag">CANDIDATE</span>`;
   if (b==='FORWARD_TEST') return `<span class="tag forwardTag">FORWARD TEST</span>`;
   if (b==='SHADOW_TEST') return `<span class="tag shadowTag">SHADOW TEST</span>`;
   return `<span class="tag rawTag">RAW ONLY</span>`;
@@ -1530,7 +1544,7 @@ function escapeHTML(str){ return String(str).replace(/[&<>"']/g,m=>({'&':'&amp;'
 function jsStr(str){ return String(str||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n').replace(/\r/g,''); }
 function canCopyOrder(s){
   if (!s) return [false,'Không có signal'];
-  if (s.bucket !== 'TRADE_READY') return [false,'Chỉ Trade Ready mới được copy mã'];
+  if (!['TRADE_READY','ACTIONABLE_CANDIDATE'].includes(s.bucket)) return [false,'Chỉ Trade Ready hoặc Actionable Candidate mới được copy mã'];
   if (!statusOpen(s)) return [false,'Signal đã đóng'];
   if (s.entryHitTime) return [false,'Entry đã hit, không còn là lệnh chờ'];
   if (!s.entry || !s.sl || !s.tp1) return [false,'Thiếu Entry/SL/TP1'];
@@ -1544,7 +1558,11 @@ function orderButtonHTML(s){
   const [ok, why] = canCopyOrder(s);
   if (!ok) return `<button class="copybtn disabled" disabled title="${escapeHTML(why)}">Không copy</button><br><span class="muted">${escapeHTML(why)}</span>`;
   const cfg=getCfg();
-  return `<button class="copybtn" onclick="copyOrderCode('${jsStr(s.id)}')">Copy Binance Code</button><br><span class="muted">Risk ${fmt(cfg.riskPct,2)}% · max margin ${fmt(cfg.maxMarginUSDT,2)} USDT</span>`;
+  const isCandidate = s.bucket === 'ACTIONABLE_CANDIDATE';
+  const label = isCandidate ? 'Copy Candidate Code' : 'Copy Trade Code';
+  const cls = isCandidate ? 'copybtn candidate' : 'copybtn';
+  const note = isCandidate ? 'Candidate: chưa đủ Trade Ready, cần kiểm tra kỹ.' : 'Trade Ready.';
+  return `<button class="${cls}" onclick="copyOrderCode('${jsStr(s.id)}')">${label}</button><br><span class="muted">${note} Risk ${fmt(cfg.riskPct,2)}% · max margin ${fmt(cfg.maxMarginUSDT,2)} USDT</span>`;
 }
 function b64urlEncodeUnicode(str){
   const utf8 = new TextEncoder().encode(str);
@@ -1563,8 +1581,10 @@ async function makeOrderPayload(s){
   const ttl=(+cfg.orderCodeTtlSec||120)*1000;
   const payload={
     version:'FTA_ORDER_V1',
-    engineVersion:'FTA_V6_8_RISK_QUICK_ORDER',
+    engineVersion:'FTA_V6_14_SEMI_AUTO_CANDIDATE',
     mode:'SEMI_AUTO_FILL_ONLY',
+    quality:s.bucket==='TRADE_READY'?'TRADE_READY':(s.bucket==='ACTIONABLE_CANDIDATE'?'ACTIONABLE_CANDIDATE':'UNKNOWN'),
+    warning:s.bucket==='ACTIONABLE_CANDIDATE'?'Candidate signal: chưa đủ Trade Ready. Hãy xác nhận lại chart, giá hiện tại, TP/SL và chỉ dùng khối lượng nhỏ nếu trade.':'',
     symbol:s.symbol,
     side:s.side,
     orderType:'LIMIT',
@@ -1633,7 +1653,7 @@ async function copyOrderCode(id){
     const code=makeOrderCodeFromPayload(p);
     const copied=await copyText(code);
     const riskWarn=p.riskExceeded ? ' CẢNH BÁO: min order vượt risk setting.' : '';
-    setStatus(copied ? `Đã copy Binance Code: ${p.symbol} ${p.side} x${p.leverage} · margin ${fmt(p.marginUSDT,4)} USDT · qty ${fmt(p.qty,10)} · risk ${fmt(p.actualRiskUSDT,4)}/${fmt(p.riskUSDT,4)} USDT.${riskWarn} Mã hết hạn sau ${Math.round((p.expiresAt-Date.now())/1000)} giây.` : 'Không copy được vào clipboard.');
+    setStatus(copied ? `Đã copy ${p.quality==='ACTIONABLE_CANDIDATE'?'Candidate':'Trade Ready'} Binance Code: ${p.symbol} ${p.side} x${p.leverage} · margin ${fmt(p.marginUSDT,4)} USDT · qty ${fmt(p.qty,10)} · risk ${fmt(p.actualRiskUSDT,4)}/${fmt(p.riskUSDT,4)} USDT.${riskWarn} Mã hết hạn sau ${Math.round((p.expiresAt-Date.now())/1000)} giây.` : 'Không copy được vào clipboard.');
   }catch(e){
     setStatus('Không thể tạo Binance Code: '+(e.message||e));
   }
@@ -1646,6 +1666,7 @@ function renderMetrics(){
   $('mRaw').textContent=state.raw.length;
   $('mShadow').textContent=sig.filter(s=>s.bucket==='SHADOW_TEST' && statusOpen(s)).length;
   $('mForward').textContent=sig.filter(s=>s.bucket==='FORWARD_TEST' && statusOpen(s)).length;
+  if ($('mCandidate')) $('mCandidate').textContent=sig.filter(s=>s.bucket==='ACTIONABLE_CANDIDATE' && statusOpen(s)).length;
   $('mTrade').textContent=sig.filter(s=>s.bucket==='TRADE_READY' && statusOpen(s)).length;
   $('mWin').textContent=`${sig.filter(isTp2).length} / ${sig.filter(s=>isTp1(s)&&!isTp2(s)).length}`;
   $('mLoss').textContent=`${sig.filter(isLoss).length} / ${sig.filter(isWeak).length}`;
@@ -2190,6 +2211,7 @@ function currentRows(){
   if (tab==='archived') rows = state.signals.filter(s=>s.isArchived);
   if (tab==='shadow') rows = rows.filter(s=>s.bucket==='SHADOW_TEST');
   if (tab==='forward') rows = rows.filter(s=>s.bucket==='FORWARD_TEST');
+  if (tab==='candidate') rows = rows.filter(s=>s.bucket==='ACTIONABLE_CANDIDATE');
   if (tab==='trade') rows = rows.filter(s=>s.bucket==='TRADE_READY');
   if (tab==='active') rows = rows.filter(statusOpen);
   if (tab==='closed') rows = rows.filter(statusClosed);
@@ -2209,6 +2231,7 @@ function renderMetrics(){
   $('mRaw').textContent=state.raw.length;
   $('mShadow').textContent=sig.filter(s=>s.bucket==='SHADOW_TEST' && statusOpen(s)).length;
   $('mForward').textContent=sig.filter(s=>s.bucket==='FORWARD_TEST' && statusOpen(s)).length;
+  if ($('mCandidate')) $('mCandidate').textContent=sig.filter(s=>s.bucket==='ACTIONABLE_CANDIDATE' && statusOpen(s)).length;
   $('mTrade').textContent=sig.filter(s=>s.bucket==='TRADE_READY' && statusOpen(s)).length;
   $('mWin').textContent=`${sig.filter(isTp2).length} / ${sig.filter(s=>isTp1(s)&&!isTp2(s)).length}`;
   $('mLoss').textContent=`${sig.filter(isLoss).length} / ${sig.filter(isWeak).length}`;
@@ -2219,7 +2242,7 @@ function renderMetrics(){
   $('mEv').textContent=Number.isFinite(mean(evs)) ? `${mean(evs).toFixed(2)}R` : '0R';
 }
 function exportJSON(){
-  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB_V6_13_ARCHIVE_LEARNING', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals, learningStats:state.learningStats, archiveQueue:state.archiveQueue},null,2)], {type:'application/json'});
+  const blob = new Blob([JSON.stringify({version:'FTA_V6_EDGE_LAB_V6_14_SEMI_AUTO_CANDIDATE', exportedAt:new Date().toISOString(), cfg:getCfg(), raw:state.raw, signals:state.signals, learningStats:state.learningStats, archiveQueue:state.archiveQueue},null,2)], {type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`fta-v6-edge-lab-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href);
 }
 async function importJSON(file){
